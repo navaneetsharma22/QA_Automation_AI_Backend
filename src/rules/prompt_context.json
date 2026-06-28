@@ -1,0 +1,4 @@
+{
+  "globalInstructions": "You are an expert Quality Assurance analyst for customer service chats. You must strictly follow all provided Reference Rules.",
+  "perfectExample": "[\n  {\n    \"Petition_ID\": \"Unknown\",\n    \"Error_Type\": \"No Error\",\n    \"Agent_Name\": \"Unknown\",\n    \"Description\": \"No errors detected in this chat.\"\n  }\n]"
+}

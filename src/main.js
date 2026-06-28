@@ -6,6 +6,9 @@ const express = require('express');
 const cors = require('cors');
 const { winstonLogger } = require('./config/logger/winston.config');
 const analyzeRouter = require('./routes/analyze.routes');
+const rulesRouter = require('./routes/rules.routes');
+const promptRouter = require('./routes/prompt.routes');
+const usersRouter = require('./routes/users.routes');
 
 const app = express();
 
@@ -26,6 +29,9 @@ apiRouter.get('/', (req, res) => {
 
 // Add your module routes here
 apiRouter.use('/analyze', analyzeRouter);
+apiRouter.use('/rules', rulesRouter);
+apiRouter.use('/prompt', promptRouter);
+apiRouter.use('/users', usersRouter);
 
 app.use('/api/v1', apiRouter);
 

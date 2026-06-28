@@ -14,13 +14,25 @@ const getAnthropicClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_A
 // Build the base system prompt dynamically based on the Corendon Airlines instructions
 const buildSystemPrompt = () => {
   const rulesPath = path.join(__dirname, '..', 'rules', 'corendon_rules.json');
+  const promptContextPath = path.join(__dirname, '..', 'rules', 'prompt_context.json');
+  
   let corendonRules = {};
+  let promptContext = { globalInstructions: '', perfectExample: '' };
   
   try {
     const fileData = fs.readFileSync(rulesPath, 'utf8');
     corendonRules = JSON.parse(fileData);
   } catch (err) {
     console.error('Could not load corendon_rules.json', err);
+  }
+
+  try {
+    if (fs.existsSync(promptContextPath)) {
+      const pcData = fs.readFileSync(promptContextPath, 'utf8');
+      promptContext = JSON.parse(pcData);
+    }
+  } catch (err) {
+    console.error('Could not load prompt_context.json', err);
   }
 
   return `
@@ -99,7 +111,18 @@ If every applicable JSON rule passes, return:
 ## Output Requirements
 Return only structured JSON. Do not return Markdown. Do not include explanations outside the JSON response.
 
-Here is the JSON knowledge base containing the rules you MUST follow:
+## AI Prompt Studio (Dynamic Context)
+The following are critical instructions and examples provided by the admin. These instructions take precedence over general analysis rules.
+
+### Global System Instructions:
+${promptContext.globalInstructions || 'No custom global instructions provided.'}
+
+### Few-Shot Example (Perfect Output):
+If you see an example provided below, you MUST use it to understand the exact format, tone, and strictness of the required output:
+${promptContext.perfectExample || 'No examples provided.'}
+
+---
+## Analysis Rules JSON
 ${JSON.stringify(corendonRules, null, 2)}
 
 You MUST return your response as a valid JSON object with EXACTLY this structure:
@@ -171,7 +194,7 @@ exports.analyzeChat = async (req, res) => {
     else if (providerName.includes('GEMINI') || providerName.includes('GOOGLE')) {
       const genAI = getGeminiClient();
       const model = genAI.getGenerativeModel({ 
-        model: aiModel || 'gemini-1.5-pro',
+        model: aiModel || 'gemini-2.5-flash',
         generationConfig: { responseMimeType: 'application/json' }
       });
       const result = await model.generateContent(`${activeSystemPrompt}\n\nAnalyze this conversation:\n${conversationText}`);
@@ -200,6 +223,38 @@ exports.analyzeChat = async (req, res) => {
         messages: [{ role: 'user', content: conversationText }]
       });
       rawResponse = completion.content[0].text;
+    }
+    else if (providerName.includes('DEEPSEEK')) {
+      const deepseek = new OpenAI({ 
+        apiKey: process.env.DEEPSEEK_API_KEY || 'no-key',
+        baseURL: 'https://api.deepseek.com/v1' 
+      });
+      const completion = await deepseek.chat.completions.create({
+        messages: [
+          { role: 'system', content: activeSystemPrompt },
+          { role: 'user', content: conversationText }
+        ],
+        model: aiModel || 'deepseek-chat',
+        temperature: 0.1,
+        response_format: { type: 'json_object' }
+      });
+      rawResponse = completion.choices[0].message.content;
+    }
+    else if (providerName.includes('OLLAMA')) {
+      const ollama = new OpenAI({
+        apiKey: 'ollama',
+        baseURL: (process.env.OLLAMA_BASE_URL || 'http://localhost:11434') + '/v1'
+      });
+      const completion = await ollama.chat.completions.create({
+        messages: [
+          { role: 'system', content: activeSystemPrompt },
+          { role: 'user', content: conversationText }
+        ],
+        model: aiModel || 'llama3:latest',
+        temperature: 0.1,
+        response_format: { type: 'json_object' }
+      });
+      rawResponse = completion.choices[0].message.content;
     }
     else {
       return res.status(400).json({ error: 'Unsupported AI Provider: ' + providerName });
