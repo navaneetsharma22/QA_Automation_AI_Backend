@@ -1,0 +1,166 @@
+{
+  "analysis_rules": [
+    "Read entire conversation before evaluation",
+    "Evaluate agent responses against customer intent",
+    "Do not assume missing facts",
+    "Prefer official Corendon guidance when applicable",
+    "Extract evidence for every finding",
+    "Assign severity and confidence"
+  ],
+  "global_checks": [
+    "Misleading",
+    "Wrong Issue Identification",
+    "Unsupported Assumption",
+    "Unverified Claim",
+    "Contradiction",
+    "False Promise",
+    "Policy Violation",
+    "Escalation Failure",
+    "Incorrect Troubleshooting",
+    "Failure to Answer"
+  ],
+  "rules": [
+    {
+      "id": "wrong_issue_identification",
+      "category": "Wrong Issue Identification",
+      "severity": "Major",
+      "description": "Agent answers a different issue than the customer's actual query.",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Flag unrelated guidance",
+        "Ensure actual question is addressed"
+      ],
+      "examples": [
+        {
+          "customer": "Baggage allowance",
+          "agent": "Please complete online check-in",
+          "result": "Fail"
+        },
+        {
+          "customer": "Refund request",
+          "agent": "Explains baggage policy",
+          "result": "Fail"
+        }
+      ]
+    },
+    {
+      "id": "identity_disclosure",
+      "category": "Identity Disclosure",
+      "severity": "Critical",
+      "rules": [
+        "Agent must always use assigned alias.",
+        "Never reveal real name.",
+        "Never sign with personal identity.",
+        "Never contradict displayed alias."
+      ],
+      "critical_triggers": [
+        "Real name disclosed",
+        "Personal identity revealed",
+        "Alias mismatch"
+      ]
+    },
+    {
+      "id": "booking_source_verification",
+      "category": "Booking Source Verification",
+      "severity": "Critical",
+      "mandatory_for": [
+        "Cancellation",
+        "Refund",
+        "Reschedule"
+      ],
+      "required_questions": [
+        "Where was the ticket booked?",
+        "Official Corendon website?",
+        "Travel agency?",
+        "OTA / third-party partner?"
+      ],
+      "critical_if": "Booking source not verified before guidance."
+    },
+    {
+      "id": "visa",
+      "category": "Visa & Travel Documents",
+      "severity": "Critical",
+      "acceptable": [
+        "Provide only general guidance.",
+        "Refer customer to embassy, consulate or official government website.",
+        "Advise customer to verify before travel."
+      ],
+      "critical_if": [
+        "States visa required/not required without verification.",
+        "Guarantees entry or boarding eligibility.",
+        "Provides definitive immigration advice."
+      ]
+    },
+    {
+      "id": "meal",
+      "severity": "Informational",
+      "acceptable": "Availability-based guidance",
+      "critical": "Guarantees meal updated"
+    },
+    {
+      "id": "seat",
+      "category": "Seat Requests",
+      "severity": "Informational",
+      "acceptable": [
+        "Seat changes are subject to availability.",
+        "On-board seat changes may be possible if customer agrees and seats are available."
+      ],
+      "critical_if": [
+        "Agent guarantees a specific seat.",
+        "Agent confirms seat assignment without verification."
+      ]
+    },
+    {
+      "id": "escalation",
+      "severity": "Critical",
+      "acceptable": "Troubleshoot then escalate",
+      "critical": "Required escalation not performed"
+    },
+    {
+      "id": "pnr_verification",
+      "category": "PNR / Booking Verification",
+      "severity": "Critical",
+      "rules": [
+        "Agents cannot verify PNR ownership or booking authenticity.",
+        "Escalate to Tier 3 for verification.",
+        "Do not mark resolved without verification."
+      ],
+      "critical_if": [
+        "Agent verifies booking without authorization.",
+        "Agent confirms passenger details without access."
+      ]
+    },
+    {
+      "id": "baggage_connecting",
+      "category": "Baggage Delay & Connecting Flights",
+      "severity": "Major",
+      "workflow": [
+        "Check if customer has connecting flight",
+        "Verify same airline or different airline",
+        "Same airline: baggage generally reaches final destination",
+        "Different airline: customer may need to collect and re-check baggage"
+      ],
+      "failures": [
+        "No verification of connection",
+        "Incorrect baggage transfer guidance"
+      ]
+    },
+    {
+      "id": "cancellation_refund_reschedule",
+      "category": "Cancellation / Refund / Reschedule",
+      "severity": "Critical",
+      "workflow": [
+        "Verify booking source.",
+        "Determine Corendon vs third-party booking.",
+        "Follow applicable process.",
+        "Escalate Tier 2 if unresolved.",
+        "Escalate Tier 3 when further verification is required."
+      ],
+      "critical_if": [
+        "Booking source not verified.",
+        "No escalation when required.",
+        "Incorrect guidance for third-party bookings."
+      ]
+    }
+  ]
+}
