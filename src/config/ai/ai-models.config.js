@@ -53,9 +53,9 @@ const AI_PROVIDERS = {
   },
   HUGGINGFACE: {
     name: 'Hugging Face',
-    models: ['meta-llama/Meta-Llama-3-8B-Instruct', 'mistralai/Mistral-7B-Instruct-v0.3', 'HuggingFaceH4/zephyr-7b-beta'],
-    defaultModel: 'meta-llama/Meta-Llama-3-8B-Instruct',
-    baseUrl: 'https://router.huggingface.co/hf-inference/v1',
+    models: ['meta-llama/Llama-3.3-70B-Instruct', 'Qwen/Qwen2.5-72B-Instruct', 'mistralai/Mixtral-8x7B-Instruct-v0.1'],
+    defaultModel: 'meta-llama/Llama-3.3-70B-Instruct',
+    baseUrl: 'https://router.huggingface.co/v1',
     speedRank: 'Open Source Community Models',
   },
 };

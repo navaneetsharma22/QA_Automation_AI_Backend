@@ -279,17 +279,16 @@ exports.analyzeChat = async (req, res) => {
     else if (providerName.includes('HUGGING')) {
       const hf = new OpenAI({
         apiKey: process.env.HUGGINGFACE_API_KEY || 'no-key',
-        baseURL: 'https://api-inference.huggingface.co/v1/'
+        baseURL: 'https://router.huggingface.co/v1'
       });
       const completion = await hf.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
           { role: 'user', content: conversationText }
         ],
-        model: aiModel || 'meta-llama/Meta-Llama-3-8B-Instruct',
+        model: aiModel || 'meta-llama/Llama-3.3-70B-Instruct',
         temperature: 0.1,
-        max_tokens: 2000,
-        response_format: { type: 'json_object' }
+        max_tokens: 2000
       });
       rawResponse = completion.choices[0].message.content;
     }
