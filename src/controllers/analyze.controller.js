@@ -2,6 +2,7 @@ const { Groq } = require('groq-sdk');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const OpenAI = require('openai');
 const Anthropic = require('@anthropic-ai/sdk');
+const { CohereClient } = require('cohere-ai');
 const fs = require('fs');
 const path = require('path');
 
@@ -10,6 +11,7 @@ const getGroqClient = () => new Groq({ apiKey: process.env.GROQ_API_KEY });
 const getGeminiClient = () => new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 const getOpenAiClient = () => new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const getAnthropicClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+const getCohereClient = () => new CohereClient({ token: process.env.COHERE_API_KEY || 'no-key' });
 
 // Build the base system prompt dynamically based on the Corendon Airlines instructions
 const buildSystemPrompt = () => {
@@ -291,6 +293,32 @@ exports.analyzeChat = async (req, res) => {
         max_tokens: 2000
       });
       rawResponse = completion.choices[0].message.content;
+    }
+    else if (providerName.includes('CEREBRAS')) {
+      const cerebras = new OpenAI({
+        apiKey: process.env.CEREBRAS_API_KEY || 'no-key',
+        baseURL: 'https://api.cerebras.ai/v1'
+      });
+      const completion = await cerebras.chat.completions.create({
+        messages: [
+          { role: 'system', content: activeSystemPrompt },
+          { role: 'user', content: conversationText }
+        ],
+        model: aiModel || 'llama3.1-70b',
+        temperature: 0.1,
+        response_format: { type: 'json_object' }
+      });
+      rawResponse = completion.choices[0].message.content;
+    }
+    else if (providerName.includes('COHERE')) {
+      const cohere = getCohereClient();
+      const completion = await cohere.chat({
+        message: conversationText,
+        preamble: activeSystemPrompt,
+        model: aiModel || 'command-a-plus-05-2026',
+        temperature: 0.1,
+      });
+      rawResponse = completion.text;
     }
     else {
       return res.status(400).json({ error: 'Unsupported AI Provider: ' + providerName });
