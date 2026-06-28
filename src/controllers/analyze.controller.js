@@ -125,7 +125,7 @@ ${promptContext.perfectExample || 'No examples provided.'}
 
 ---
 ## Analysis Rules JSON
-${JSON.stringify(corendonRules, null, 2)}
+${JSON.stringify(corendonRules)}
 
 You MUST return your response as a valid JSON object with EXACTLY this structure:
 {
@@ -320,14 +320,44 @@ exports.analyzeChat = async (req, res) => {
       });
       rawResponse = completion.text;
     }
+    else if (providerName.includes('GITHUB')) {
+      const github = new OpenAI({
+        apiKey: process.env.GITHUB_API_KEY || 'no-key',
+        baseURL: 'https://models.inference.ai.azure.com'
+      });
+      const completion = await github.chat.completions.create({
+        messages: [
+          { role: 'system', content: activeSystemPrompt },
+          { role: 'user', content: conversationText }
+        ],
+        model: aiModel || 'gpt-4o',
+        temperature: 0.1,
+        max_tokens: 2048,
+        response_format: { type: 'json_object' }
+      });
+      rawResponse = completion.choices[0].message.content;
+    }
     else {
       return res.status(400).json({ error: 'Unsupported AI Provider: ' + providerName });
     }
 
     // Attempt to parse JSON (some models might still include markdown despite instructions)
     let cleanedResponse = rawResponse.trim();
+    
+    // Remove DeepSeek-R1 reasoning tags (even if truncated)
+    cleanedResponse = cleanedResponse.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+
     if (cleanedResponse.startsWith('```json')) {
       cleanedResponse = cleanedResponse.replace(/^```json\n?/, '').replace(/\n?```$/, '');
+    } else if (cleanedResponse.startsWith('```')) {
+      cleanedResponse = cleanedResponse.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '');
+    }
+    
+    // Fallback: extract substring if there is trailing/leading non-JSON text
+    const firstBrace = cleanedResponse.indexOf('{');
+    const lastBrace = cleanedResponse.lastIndexOf('}');
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+      cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1);
     }
 
     const parsedJson = JSON.parse(cleanedResponse);
