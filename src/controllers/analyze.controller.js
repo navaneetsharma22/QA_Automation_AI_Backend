@@ -107,6 +107,9 @@ You MUST return your response as a valid JSON object with EXACTLY this structure
   "qaScore": <number 0-100>,
   "status": "<Passed | Warning | Failed>",
   "misleadingPercentage": <number 0-100>,
+  "petitionId": "<Extract the PET ID from the chat, or null if missing>",
+  "agentName": "<Extract the agent's name from the chat, or null if missing>",
+  "errorType": "<Short categorization of the main error, e.g. 'AHT', 'Grammatical', 'Misleading', etc.>",
   "overallRecommendation": "<A 1-2 sentence summary of the agent's performance>",
   "findings": [
     {
