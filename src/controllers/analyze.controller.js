@@ -256,6 +256,43 @@ exports.analyzeChat = async (req, res) => {
       });
       rawResponse = completion.choices[0].message.content;
     }
+    else if (providerName.includes('OPENROUTER')) {
+      const openrouter = new OpenAI({
+        apiKey: process.env.OPENROUTER_API_KEY || 'no-key',
+        baseURL: 'https://openrouter.ai/api/v1',
+        defaultHeaders: {
+          "HTTP-Referer": process.env.CLIENT_URL || "http://localhost:5173",
+          "X-Title": "Arena AI Server",
+        }
+      });
+      const completion = await openrouter.chat.completions.create({
+        messages: [
+          { role: 'system', content: activeSystemPrompt },
+          { role: 'user', content: conversationText }
+        ],
+        model: aiModel || 'meta-llama/llama-3.1-8b-instruct:free',
+        temperature: 0.1,
+        response_format: { type: 'json_object' }
+      });
+      rawResponse = completion.choices[0].message.content;
+    }
+    else if (providerName.includes('HUGGING')) {
+      const hf = new OpenAI({
+        apiKey: process.env.HUGGINGFACE_API_KEY || 'no-key',
+        baseURL: 'https://api-inference.huggingface.co/v1/'
+      });
+      const completion = await hf.chat.completions.create({
+        messages: [
+          { role: 'system', content: activeSystemPrompt },
+          { role: 'user', content: conversationText }
+        ],
+        model: aiModel || 'meta-llama/Meta-Llama-3-8B-Instruct',
+        temperature: 0.1,
+        max_tokens: 2000,
+        response_format: { type: 'json_object' }
+      });
+      rawResponse = completion.choices[0].message.content;
+    }
     else {
       return res.status(400).json({ error: 'Unsupported AI Provider: ' + providerName });
     }

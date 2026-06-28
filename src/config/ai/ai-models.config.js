@@ -44,6 +44,20 @@ const AI_PROVIDERS = {
     baseUrl: 'http://localhost:11434/api',
     speedRank: 'Zero Data Leakage / Local Execution',
   },
+  OPENROUTER: {
+    name: 'OpenRouter',
+    models: ['meta-llama/llama-3.1-8b-instruct:free'],
+    defaultModel: 'meta-llama/llama-3.1-8b-instruct:free',
+    baseUrl: 'https://openrouter.ai/api/v1',
+    speedRank: 'Unified Access to Multi-Models',
+  },
+  HUGGINGFACE: {
+    name: 'Hugging Face',
+    models: ['meta-llama/Meta-Llama-3-8B-Instruct', 'mistralai/Mistral-7B-Instruct-v0.3', 'HuggingFaceH4/zephyr-7b-beta'],
+    defaultModel: 'meta-llama/Meta-Llama-3-8B-Instruct',
+    baseUrl: 'https://router.huggingface.co/hf-inference/v1',
+    speedRank: 'Open Source Community Models',
+  },
 };
 
 module.exports = { AI_PROVIDERS };
