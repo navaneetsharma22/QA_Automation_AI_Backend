@@ -325,7 +325,7 @@ exports.analyzeChat = async (req, res) => {
           { role: 'system', content: activeSystemPrompt },
           { role: 'user', content: conversationText }
         ],
-        model: aiModel || 'meta-llama/llama-3.1-8b-instruct:free',
+        model: aiModel || 'meta-llama/llama-3.1-8b-instruct',
         temperature: 0.1,
         response_format: { type: 'json_object' }
       });
