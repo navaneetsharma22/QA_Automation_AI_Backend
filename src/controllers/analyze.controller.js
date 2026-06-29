@@ -20,7 +20,7 @@ const buildSystemPrompt = (projectCards) => {
   const promptContextPath = path.join(__dirname, '..', 'rules', 'prompt_context.json');
   
   let corendonRules = {};
-  let promptContext = { globalInstructions: '', perfectExample: '' };
+  let promptContext = {};
   
   try {
     const fileData = fs.readFileSync(rulesPath, 'utf8');
@@ -37,6 +37,49 @@ const buildSystemPrompt = (projectCards) => {
   } catch (err) {
     console.error('Could not load prompt_context.json', err);
   }
+
+  let categoryContextString = '';
+
+  if (promptContext.globalInstructions !== undefined) {
+    // Legacy single context
+    categoryContextString = `
+### Global System Instructions:
+${promptContext.globalInstructions || 'No custom global instructions provided.'}
+`;
+  } else {
+    // New category-wise contexts
+    categoryContextString = Object.entries(promptContext).map(([category, data]) => {
+      if (!data.globalInstructions) return '';
+      return `
+#### [Category: ${category}]
+**Policy & Context**:
+${data.globalInstructions || 'None provided.'}
+`;
+    }).join('\n');
+    
+    if (!categoryContextString.trim()) {
+      categoryContextString = 'No custom category instructions provided.';
+    } else {
+      categoryContextString = 'First, determine the actual customer intent (category) of the chat. Then, locate the corresponding category below and follow its Policy and Example STRICTLY:\n' + categoryContextString;
+    }
+  }
+
+  const dynamicFindingSchema = projectCards && projectCards.length > 0
+    ? projectCards.reduce((acc, card) => {
+        acc[card.heading.toLowerCase().replace(/[^a-z0-9]/g, '_')] = card.type === 'list' ? ['<extracted text>'] : '<extracted text>';
+        return acc;
+      }, {
+        "ruleViolated": "<The specific rule from the JSON that was broken>",
+        "confidence": "<number 0-100>",
+        "explanation": "<Why this rule was broken based on context>",
+        "evidence": ["<Exact quote from conversation>"]
+      })
+    : {
+        "issue": "<The specific rule from the JSON that was broken>",
+        "finding": "<Detailed description of the mistake>",
+        "reason": "<Why this rule was broken based on context>",
+        "criticalChatLogs": ["<Exact quote from conversation proving the finding>"]
+      };
 
   return `
 # Chat Analysis System Prompt
@@ -123,12 +166,7 @@ Return only structured JSON. Do not return Markdown. Do not include explanations
 ## AI Prompt Studio (Dynamic Context)
 The following are critical instructions and examples provided by the admin. These instructions take precedence over general analysis rules.
 
-### Global System Instructions:
-${promptContext.globalInstructions || 'No custom global instructions provided.'}
-
-### Few-Shot Example (Perfect Output):
-If you see an example provided below, you MUST use it to understand the exact format, tone, and strictness of the required output:
-${promptContext.perfectExample || 'No examples provided.'}
+${categoryContextString}
 
 ---
 ## Analysis Rules JSON
@@ -159,7 +197,7 @@ exports.analyzeChat = async (req, res) => {
     }
 
     let projectCards = [];
-    if (projectId) {
+    if (projectId && projectId !== 'default') {
       try {
         const project = await Project.findById(projectId);
         if (project && project.cards) {

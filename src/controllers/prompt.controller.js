@@ -24,12 +24,11 @@ exports.getPromptContext = (req, res) => {
 
 exports.updatePromptContext = (req, res) => {
   try {
-    const { globalInstructions, perfectExample } = req.body;
+    const newContext = req.body;
     
-    const newContext = {
-      globalInstructions: globalInstructions || '',
-      perfectExample: perfectExample || ''
-    };
+    if (!newContext || typeof newContext !== 'object') {
+      return res.status(400).json({ error: 'Invalid prompt context format' });
+    }
 
     fs.writeFileSync(PROMPT_FILE_PATH, JSON.stringify(newContext, null, 2), 'utf8');
 

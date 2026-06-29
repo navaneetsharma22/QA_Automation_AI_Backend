@@ -23,7 +23,13 @@ if (process.env.MONGODB_URI) {
 
 // Security & Middleware
 app.use(cors({
-  origin: process.env.CLIENT_URL || '*',
+  origin: (origin, callback) => {
+    if (!origin || origin.startsWith('http://localhost') || origin === process.env.CLIENT_URL) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
   methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
   credentials: true,
 }));
