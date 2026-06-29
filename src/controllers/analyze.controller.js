@@ -49,12 +49,17 @@ ${promptContext.globalInstructions || 'No custom global instructions provided.'}
   } else {
     // New category-wise contexts
     categoryContextString = Object.entries(promptContext).map(([category, data]) => {
-      if (!data.globalInstructions) return '';
-      return `
-#### [Category: ${category}]
-**Policy & Context**:
-${data.globalInstructions || 'None provided.'}
-`;
+      if (category === '_GlobalExample') return ''; // Ignore old format if present
+      if (!data.globalInstructions && !data.perfectExample) return '';
+      
+      let contextStr = `\n#### [Category: ${category}]\n`;
+      if (data.globalInstructions) {
+        contextStr += `**Policy & Context**:\n${data.globalInstructions}\n`;
+      }
+      if (data.perfectExample) {
+        contextStr += `\n**Perfect Output Example**:\n${data.perfectExample}\n`;
+      }
+      return contextStr;
     }).join('\n');
     
     if (!categoryContextString.trim()) {
