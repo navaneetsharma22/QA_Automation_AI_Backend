@@ -92,12 +92,69 @@ ${promptContext.globalInstructions || 'No custom global instructions provided.'}
         "explanation": "<Why this rule was broken based on context>",
         "evidence": ["<Exact quote from conversation>"]
       }
-    : {
-        "issue": "<The specific rule from the JSON that was broken>",
-        "finding": "<Detailed description of the mistake>",
-        "reason": "<Why this rule was broken based on context>",
-        "criticalChatLogs": ["<Exact quote from conversation proving the finding>"]
-      };
+    : null;
+
+  const defaultOutputSchema = `
+You MUST return your response as a valid JSON object with EXACTLY this structure:
+{
+  "qaScore": <number 0-100>,
+  "status": "<Passed | Warning | Failed>",
+  "misleadingPercentage": <number 0-100>,
+  "petitionId": "<Extract the PET ID from the chat, or null if missing>",
+  "agentName": "<Extract the agent's name from the chat, or null if missing>",
+  "errorType": "<Short categorization of the main error, e.g. 'AHT', 'Grammatical', 'Misleading', 'None', etc.>",
+  "overallRecommendation": "<A 1-2 sentence summary of the agent's performance>",
+
+  "qaFinding": "<Main QA finding result, e.g. 'No QA Error Found' or a brief description of the primary issue>",
+
+  "criticalChatLogs": [
+    { "speaker": "<Speaker name>", "message": "<Their exact message text>" }
+  ],
+
+  "findings": [
+    {
+      "ruleName": "<Rule or check heading, e.g. 'Issue Identification', 'Incorrect PIR Guidance', 'Misleading Information'>",
+      "description": "<What the agent did related to this rule>",
+      "status": "<Pass | Fail>",
+      "explanation": "<Why it passed or failed, especially for failures - cite the specific rule or policy>"
+    }
+  ],
+
+  "expectedAgentAction": ["<Action 1 the agent should have taken>", "<Action 2>", "<Action 3>"],
+  "agentAction": "<Paragraph describing what the agent actually did>",
+  "missingExpectedAction": "<What was missing from the agent's response, or 'None' if fully addressed>",
+
+  "ahtAnalysis": {
+    "result": "<'No AHT Issue' or description of AHT problem>",
+    "timeline": ["<HH:MM → HH:MM — X minutes>"],
+    "observation": "<Summary observation about response time thresholds>"
+  },
+
+  "reason": "<Overall explanation paragraph of why the agent passed or failed QA>",
+
+  "qaConclusion": {
+    "status": "<QA Passed | QA Failed>",
+    "misleading": "<Yes | No>",
+    "severity": "<None | Low | Medium | High | Critical>",
+    "observations": ["<Observation 1>", "<Observation 2>"],
+    "decision": "<Final paragraph with the overall QA verdict>"
+  }
+}`;
+
+  const dynamicOutputSchema = `
+You MUST return your response as a valid JSON object with EXACTLY this structure:
+{
+  "qaScore": <number 0-100>,
+  "status": "<Passed | Warning | Failed>",
+  "misleadingPercentage": <number 0-100>,
+  "petitionId": "<Extract the PET ID from the chat, or null if missing>",
+  "agentName": "<Extract the agent's name from the chat, or null if missing>",
+  "errorType": "<Short categorization of the main error, e.g. 'AHT', 'Grammatical', 'Misleading', etc.>",
+  "overallRecommendation": "<A 1-2 sentence summary of the agent's performance>",
+  "findings": [
+${JSON.stringify(dynamicFindingSchema, null, 4)}
+  ]
+}`;
 
   return `
 # Chat Analysis System Prompt
@@ -190,19 +247,7 @@ ${categoryContextString}
 ## Analysis Rules JSON
 ${JSON.stringify(corendonRules)}
 
-You MUST return your response as a valid JSON object with EXACTLY this structure:
-{
-  "qaScore": <number 0-100>,
-  "status": "<Passed | Warning | Failed>",
-  "misleadingPercentage": <number 0-100>,
-  "petitionId": "<Extract the PET ID from the chat, or null if missing>",
-  "agentName": "<Extract the agent's name from the chat, or null if missing>",
-  "errorType": "<Short categorization of the main error, e.g. 'AHT', 'Grammatical', 'Misleading', etc.>",
-  "overallRecommendation": "<A 1-2 sentence summary of the agent's performance>",
-  "findings": [
-${JSON.stringify(dynamicFindingSchema, null, 4)}
-  ]
-}
+${dynamicFindingSchema ? dynamicOutputSchema : defaultOutputSchema}
 `;
 };
 
