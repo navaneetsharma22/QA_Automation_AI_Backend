@@ -149,7 +149,7 @@ const SettingsSchema = new mongoose.Schema({
 const CardSchema = new mongoose.Schema({
   id: { type: String, required: true },
   heading: { type: String, required: true },
-  type: { type: String, enum: ['text', 'list', 'parent'], default: 'text' },
+  type: { type: String, enum: ['text', 'list', 'parent', 'row', 'grid-2', 'grid-3'], default: 'text' },
   description: { type: String, default: '' },
   children: { type: [this], default: [] } // Recursive for nested cards
 });

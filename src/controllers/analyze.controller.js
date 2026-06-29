@@ -69,16 +69,29 @@ ${promptContext.globalInstructions || 'No custom global instructions provided.'}
     }
   }
 
+  const buildSchema = (cards) => {
+    let schema = {};
+    const traverse = (nodeList) => {
+      if (!nodeList) return;
+      nodeList.forEach(c => {
+        if (!['parent', 'grid-2', 'grid-3', 'row'].includes(c.type)) {
+          schema[c.id] = c.type === 'list' ? [`<extracted text for: ${c.heading}>`] : `<extracted text for: ${c.heading}>`;
+        }
+        if (c.children && c.children.length > 0) traverse(c.children);
+      });
+    };
+    traverse(cards);
+    return schema;
+  };
+
   const dynamicFindingSchema = projectCards && projectCards.length > 0
-    ? projectCards.reduce((acc, card) => {
-        acc[card.heading.toLowerCase().replace(/[^a-z0-9]/g, '_')] = card.type === 'list' ? ['<extracted text>'] : '<extracted text>';
-        return acc;
-      }, {
+    ? {
+        ...buildSchema(projectCards),
         "ruleViolated": "<The specific rule from the JSON that was broken>",
         "confidence": "<number 0-100>",
         "explanation": "<Why this rule was broken based on context>",
         "evidence": ["<Exact quote from conversation>"]
-      })
+      }
     : {
         "issue": "<The specific rule from the JSON that was broken>",
         "finding": "<Detailed description of the mistake>",
