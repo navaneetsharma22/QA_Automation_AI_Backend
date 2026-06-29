@@ -5,6 +5,7 @@ const Anthropic = require('@anthropic-ai/sdk');
 const { CohereClient } = require('cohere-ai');
 const fs = require('fs');
 const path = require('path');
+const { Project, ChatAnalysis } = require('../database/schemas/all-schemas');
 
 // Initialize SDKs lazily to handle missing keys gracefully
 const getGroqClient = () => new Groq({ apiKey: process.env.GROQ_API_KEY });
@@ -14,7 +15,7 @@ const getAnthropicClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_A
 const getCohereClient = () => new CohereClient({ token: process.env.COHERE_API_KEY || 'no-key' });
 
 // Build the base system prompt dynamically based on the Corendon Airlines instructions
-const buildSystemPrompt = () => {
+const buildSystemPrompt = (projectCards) => {
   const rulesPath = path.join(__dirname, '..', 'rules', 'corendon_rules.json');
   const promptContextPath = path.join(__dirname, '..', 'rules', 'prompt_context.json');
   
@@ -100,13 +101,19 @@ Never invent: Booking information, PNR details, Airline policies, Customer infor
 Use only:
 1. Conversation
 2. Uploaded JSON knowledge base
-3. Official Corendon documentation (when available)
+Formulate your findings using ONLY the JSON format specified below.
 
 ---
-## If No Issues Exist
-If every applicable JSON rule passes, return:
-* Overall Result: PASS
-* No misleading information detected.
+## Critical Considerations
+* **Context over Keywords:** Do not trigger a failure just because a keyword matches. Understand the context. (e.g. if a customer asks for a refund but the agent explains why they are not eligible according to policy, that is a PASSED interaction).
+* **Missing vs Hidden Info:** Sometimes agents don't have all information in the chat but can see it in their CRM. Give the agent the benefit of the doubt if their response implies they checked a system, unless the JSON explicitly requires them to ask for that information.
+* **Escalations:** If an agent escalates when they should have resolved it themselves according to the rules, mark it as "Escalation Delay" or "Failed".
+* **Language/Grammar:** Only flag grammatical errors if they are severe enough to cause confusion or if explicitly instructed by the rules. Do not fail for minor typos.
+* **AHT (Average Handling Time):** If the agent took too long to respond (e.g. more than 3 minutes between messages without warning the customer), or made the customer repeat themselves unnecessarily, flag this as an AHT issue.
+
+---
+## Special Cases
+* If the conversation has no errors, you must still return the JSON format, but with "status": "Passed", "qaScore": 100, and an empty "findings" array [].
 * No QA failures detected.
 
 ---
@@ -137,29 +144,7 @@ You MUST return your response as a valid JSON object with EXACTLY this structure
   "errorType": "<Short categorization of the main error, e.g. 'AHT', 'Grammatical', 'Misleading', etc.>",
   "overallRecommendation": "<A 1-2 sentence summary of the agent's performance>",
   "findings": [
-    {
-      "id": "<generate a unique string, e.g. f_1234>",
-      "issueTitle": "<Short title of issue>",
-      "category": "<Misleading Guidance | Policy Violation | Incorrect Guidance | Communication Quality>",
-      "severity": "<Critical | High | Medium | Low>",
-      "finding": "<A summary of the agent's error>",
-      "customerActualConcern": "<What the customer was actually trying to achieve>",
-      "correctResolution": "<The proper workflow the agent should have followed>",
-      "expectedAgentAction": [
-        "<Action 1>",
-        "<Action 2>"
-      ],
-      "agentAction": "<A summary of what the agent actually did>",
-      "missingExpectedAction": [
-        "<Missed Action 1>",
-        "<Missed Action 2>"
-      ],
-      "reason": "<The underlying reason why the action failed>",
-      "response": "<The impact of the failure>",
-      "aht": "<Yes or No, with a brief explanation of how it impacted Average Handling Time>",
-      "confidenceScore": <number 0-100>,
-      "criticalChatLogs": "<The most critical part of the conversation illustrating the failure>"
-    }
+${JSON.stringify(dynamicFindingSchema, null, 4)}
   ]
 }
 `;
@@ -167,16 +152,28 @@ You MUST return your response as a valid JSON object with EXACTLY this structure
 
 exports.analyzeChat = async (req, res) => {
   try {
-    const { conversationText, aiProvider, aiModel } = req.body;
+    const { conversationText, aiProvider, aiModel, projectId } = req.body;
 
     if (!conversationText) {
       return res.status(400).json({ error: 'Conversation text is required' });
     }
 
+    let projectCards = [];
+    if (projectId) {
+      try {
+        const project = await Project.findById(projectId);
+        if (project && project.cards) {
+          projectCards = project.cards;
+        }
+      } catch (err) {
+        console.error('Error fetching project:', err);
+      }
+    }
+
     const providerName = aiProvider?.toUpperCase() || 'GROQ';
     let rawResponse = '';
     
-    const activeSystemPrompt = buildSystemPrompt();
+    const activeSystemPrompt = buildSystemPrompt(projectCards);
 
     console.log(`Analyzing chat using ${providerName} (${aiModel})...`);
 
@@ -361,6 +358,12 @@ exports.analyzeChat = async (req, res) => {
     }
 
     const parsedJson = JSON.parse(cleanedResponse);
+    
+    if (!parsedJson.findings) parsedJson.findings = [];
+    if (projectCards && projectCards.length > 0) {
+      parsedJson.schemaDefinition = projectCards;
+    }
+
     return res.status(200).json(parsedJson);
 
   } catch (error) {

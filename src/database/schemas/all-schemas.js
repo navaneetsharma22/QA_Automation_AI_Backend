@@ -22,6 +22,7 @@ const UserSchema = new mongoose.Schema({
 const ChatAnalysisSchema = new mongoose.Schema({
   analysisId: { type: String, required: true, unique: true, index: true },
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+  projectId: { type: mongoose.Schema.Types.ObjectId, ref: 'Project' },
   conversationText: { type: String, required: true },
   aiProvider: { type: String, required: true },
   aiModel: { type: String, required: true },
@@ -144,7 +145,26 @@ const SettingsSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// 11. Project Schema (Dynamic Report Templates)
+const CardSchema = new mongoose.Schema({
+  id: { type: String, required: true },
+  heading: { type: String, required: true },
+  type: { type: String, enum: ['text', 'list', 'parent'], default: 'text' },
+  description: { type: String, default: '' },
+  children: { type: [this], default: [] } // Recursive for nested cards
+});
+
+const ProjectSchema = new mongoose.Schema({
+  name: { type: String, required: true, unique: true },
+  description: { type: String, default: '' },
+  status: { type: String, enum: ['Active', 'Archived'], default: 'Active' },
+  cards: [CardSchema],
+  createdAt: { type: Date, default: Date.now },
+  updatedAt: { type: Date, default: Date.now }
+});
+
 module.exports = {
+  Project: mongoose.models.Project || mongoose.model('Project', ProjectSchema),
   User: mongoose.models.User || mongoose.model('User', UserSchema),
   ChatAnalysis: mongoose.models.ChatAnalysis || mongoose.model('ChatAnalysis', ChatAnalysisSchema),
   PromptTemplate: mongoose.models.PromptTemplate || mongoose.model('PromptTemplate', PromptTemplateSchema),

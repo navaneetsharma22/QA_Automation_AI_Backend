@@ -5,6 +5,17 @@
     "email": "navaneet@dev.com",
     "password": "123Nav@456",
     "role": "User",
-    "createdAt": "2026-06-28T12:24:11.917Z"
+    "createdAt": "2026-06-28T12:24:11.917Z",
+    "sidebarAccess": [
+      "dashboard",
+      "analyze",
+      "history",
+      "reports",
+      "prompts",
+      "knowledge",
+      "models",
+      "analytics",
+      "settings"
+    ]
   }
 ]

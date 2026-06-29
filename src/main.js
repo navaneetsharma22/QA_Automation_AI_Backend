@@ -9,8 +9,17 @@ const analyzeRouter = require('./routes/analyze.routes');
 const rulesRouter = require('./routes/rules.routes');
 const promptRouter = require('./routes/prompt.routes');
 const usersRouter = require('./routes/users.routes');
+const projectsRouter = require('./routes/projects.routes');
 
 const app = express();
+const mongoose = require('mongoose');
+
+if (process.env.MONGODB_URI) {
+  mongoose.connect(process.env.MONGODB_URI)
+    .then(() => winstonLogger.info('Connected to MongoDB'))
+    .catch(err => winstonLogger.error('MongoDB connection error:', err));
+}
+
 
 // Security & Middleware
 app.use(cors({
@@ -32,6 +41,7 @@ apiRouter.use('/analyze', analyzeRouter);
 apiRouter.use('/rules', rulesRouter);
 apiRouter.use('/prompt', promptRouter);
 apiRouter.use('/users', usersRouter);
+apiRouter.use('/projects', projectsRouter);
 
 app.use('/api/v1', apiRouter);
 

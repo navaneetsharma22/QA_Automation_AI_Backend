@@ -40,6 +40,7 @@ exports.createUser = (req, res) => {
       email,
       password,
       role: 'User',
+      sidebarAccess: req.body.sidebarAccess || ['dashboard', 'analyze', 'history', 'reports', 'prompts', 'knowledge', 'models', 'analytics', 'settings', 'profile'],
       isBlocked: false,
       createdAt: new Date().toISOString()
     };
@@ -101,7 +102,7 @@ exports.getAllUsers = (req, res) => {
 exports.updateUser = (req, res) => {
   try {
     const { id } = req.params;
-    const { fullName, email, password, isBlocked } = req.body;
+    const { fullName, email, password, isBlocked, sidebarAccess } = req.body;
     const users = getUsersData();
     const index = users.findIndex(u => u.id === id);
 
@@ -120,7 +121,8 @@ exports.updateUser = (req, res) => {
       ...(fullName && { fullName }),
       ...(email && { email }),
       ...(password && { password }),
-      ...(typeof isBlocked === 'boolean' && { isBlocked })
+      ...(typeof isBlocked === 'boolean' && { isBlocked }),
+      ...(sidebarAccess && { sidebarAccess })
     };
 
     saveUsersData(users);
