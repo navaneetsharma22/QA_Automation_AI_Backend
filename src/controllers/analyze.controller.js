@@ -300,10 +300,10 @@ Your findings and your final verdict MUST be logically aligned. Apply these rule
 Return ONLY structured JSON matching the provided schema. Do not return Markdown. Do not include any text, reasoning blocks, or explanations outside the JSON response.
 
 ---
-## Critical Chat Logs Extraction Rules (HARD LIMIT: MAXIMUM 4 MESSAGES)
+## Critical Chat Logs Extraction Rules (LIMIT: MAXIMUM 4 PAIRS / 8 MESSAGES)
 When populating the "criticalChatLogs" array in the JSON output, you MUST follow these strict boundaries:
-1. **HARD LIMIT OF 4 MESSAGES:** You are STRICTLY FORBIDDEN from returning more than 4 messages total in the array. If you output 5 or more messages, you have failed.
-2. **HUNT FOR THE ERROR:** Do not blindly copy from the beginning of the chat. You must scan the chat, find the exact moment the agent made a mistake (or provided critical info), and ONLY extract that specific 2-to-4 message exchange (e.g., Customer asks question -> Agent gives wrong answer).
+1. **LIMIT OF 4 PAIRS:** You can return up to 4 exchanges (maximum 8 messages total). Do NOT exceed this limit.
+2. **HUNT FOR THE SENSITIVE ERROR:** Do not blindly copy from the beginning of the chat. You must scan the chat, find the exact moment the agent made a mistake (or provided critical info), and ONLY extract those sensitive exchanges.
 3. **STRICTLY NO FULL CHAT DUMPS:** Never include the entire conversation.
 4. **DO NOT INCLUDE NOISE:** Exclude greetings, closing remarks, holding messages, and unrelated pleasantries.
 5. **EVIDENCE ONLY:** Include only the customer intent, the agent's failing/critical response, and the customer's reaction to it.
@@ -449,7 +449,7 @@ exports.analyzeChat = async (req, res) => {
     const activeSystemPrompt = buildSystemPrompt(projectCards, detectedCategory, restrictionLevel);
 
     // Build the analysis user message once — used by ALL providers for consistency
-    const analysisUserMessage = `Analyze this conversation:\n\n${safeConversationText}\n\n**CRITICAL INSTRUCTION**: Perform a thorough step-by-step QA analysis of the conversation above. Strictly adhere to all rules in the JSON knowledge base. You must evaluate every applicable rule and provide detailed explanations. Check for: missing mandatory information gathering, repeated questions, AHT delays, misleading guidance, and unverified claims. Output your final response ONLY as a valid JSON object matching the requested schema exactly.`;
+    const analysisUserMessage = `Analyze this conversation:\n\n${safeConversationText}\n\n**CRITICAL INSTRUCTION**: Perform a thorough step-by-step QA analysis of the conversation above. Strictly adhere to all rules in the JSON knowledge base. You must evaluate every applicable rule and provide detailed explanations. Check for: missing mandatory information gathering, repeated questions, AHT delays, misleading guidance, and unverified claims.\n\n**CRITICAL LIMIT**: You MUST extract a maximum of 4 pairs (up to 8 messages total) for your criticalChatLogs array, focusing ONLY on the exact moment the sensitive error occurred. Output your final response ONLY as a valid JSON object matching the requested schema exactly.`;
 
     console.log(`Analyzing chat using ${providerName} (${aiModel})...`);
 
