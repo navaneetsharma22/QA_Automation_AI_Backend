@@ -10,8 +10,8 @@ const rulesRouter = require('./routes/rules.routes');
 const promptRouter = require('./routes/prompt.routes');
 const usersRouter = require('./routes/users.routes');
 const projectsRouter = require('./routes/projects.routes');
-
 const errorTypesRouter = require('./routes/errorTypes.routes');
+const crmRouter = require('./routes/crm.routes');
 
 const app = express();
 const mongoose = require('mongoose');
@@ -51,6 +51,7 @@ apiRouter.use('/prompt', promptRouter);
 apiRouter.use('/users', usersRouter);
 apiRouter.use('/projects', projectsRouter);
 apiRouter.use('/errortypes', errorTypesRouter);
+apiRouter.use('/crm', crmRouter);
 
 app.use('/api/v1', apiRouter);
 
