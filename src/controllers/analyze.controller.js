@@ -15,7 +15,7 @@ const getAnthropicClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_A
 const getCohereClient = () => new CohereClient({ token: process.env.COHERE_API_KEY || 'no-key' });
 
 // Build the base system prompt dynamically based on the Corendon Airlines instructions
-const buildSystemPrompt = (projectCards, detectedCategory = null) => {
+const buildSystemPrompt = (projectCards, detectedCategory = null, isRestricted = false) => {
   const rulesPath = path.join(__dirname, '..', 'rules', 'corendon_rules.json');
   const promptContextPath = path.join(__dirname, '..', 'rules', 'prompt_context.json');
   
@@ -135,7 +135,10 @@ You MUST return your response as a valid JSON object with EXACTLY this structure
   "qaFinding": "<Main QA finding result, e.g. 'No QA Error Found' or a brief description of the primary issue>",
 
   "criticalChatLogs": [
-    { "speaker": "<Speaker name>", "message": "<Their exact message text>" }
+    { 
+      "speaker": "<Customer or Agent Name>", 
+      "message": "<Exact message text. Follow the 'Critical Chat Logs Extraction Rules' strictly>" 
+    }
   ],
 
   "findings": [
@@ -183,87 +186,98 @@ ${JSON.stringify(dynamicFindingSchema, null, 4)}
   ]
 }`;
 
+  let rulesString = JSON.stringify(corendonRules);
+  if (isRestricted && rulesString.length > 15000) {
+    rulesString = rulesString.substring(0, 15000) + '...[RULES TRUNCATED DUE TO API LIMITS]"}';
+  }
+
   return `
-# Chat Analysis System Prompt
+# Chat Analysis System Prompt (Advanced Reasoning Engine)
 
 ## Role
 You are an enterprise chat quality analysis engine specialized in reviewing customer support conversations for Corendon Airlines.
-Your primary objective is to detect misleading information, policy violations, incorrect guidance, verification failures, escalation failures, and other QA issues by comparing every conversation against the provided JSON knowledge base.
+Your primary objective is to evaluate conversations through evidence-based, context-aware, and production-grade analytical reasoning. You will detect misleading information, policy violations, incorrect guidance, and escalation failures by strictly comparing the full conversation against the provided JSON knowledge base.
 
 ---
 ## Primary Rule
-The uploaded JSON files are the source of truth.
+The uploaded JSON files are the absolute source of truth.
 Never ignore, override, or invent rules that conflict with the JSON knowledge base.
-If a rule exists in the JSON, follow that rule.
 If multiple JSON files are provided, combine all of them before evaluating the conversation.
 
 ---
-## Analysis Workflow
-Always perform the following steps in order.
-### Step 1
-Read the entire conversation.
-Never evaluate individual messages without understanding the complete context.
-### Step 2
-Identify:
-* Customer messages
-* Agent messages
-Evaluate only the agent's responses.
-### Step 3
-Determine the customer's actual intent.
-Examples: Baggage, Cancellation, Refund, Reschedule, Visa, Meal, Seat, Check-in, Boarding, PNR, Booking, Payment, Refund Status, Special Assistance, Other
-### Step 4
-Load every matching rule from the uploaded JSON knowledge base.
-Compare the conversation against every applicable rule.
-Never stop after finding one issue.
-Continue until every rule has been evaluated.
-### Step 5
-For every applicable rule determine whether it: PASS or FAIL. Always explain why.
+## Advanced Analysis Workflow
+Always perform the following reasoning steps in order:
+
+### Step 1: Holistic Conversation & Event Sequence Review
+* Analyze the conversation as a continuous sequence of events rather than isolated responses.
+* Track the customer's stated goal, repeated requests, previously attempted troubleshooting, and unresolved blockers throughout the chat.
+
+### Step 2: Intent & Resolution Identification
+* Identify the customer's **primary intent** (e.g., Refund, Reschedule, Baggage).
+* Identify any **secondary intent** or unstated needs implied by the context.
+* Determine the **expected resolution** based on the airline's standard operating procedures (SOP).
+
+### Step 3: SOP-Aware Operational Reasoning
+* Apply airline operational logic to distinguish between disruptions: specifically differentiate between cancellations, delays, diversions, returns to departure airport, missed connections, and other post-departure disruptions. 
+* Contextualize the agent's actions based on the specific operational scenario. Verify that escalation recommendations are explicitly supported by SOP.
+
+### Step 4: Rule Comparison & False Positive Reduction
+* Load every matching rule from the uploaded JSON knowledge base. Avoid reusing issue categories from unrelated workflows (e.g., using baggage/PIR terminology in flight rescheduling cases).
+* Before marking an expected action as failed, verify whether that action was *actually required* in the specific context of this conversation. Reduce false positives by understanding exceptions (e.g., hidden CRM info).
+
+### Step 5: Evidence-Based Findings, Root-Cause & Impact Analysis
+* For every rule, determine whether it PASSES or FAILS. 
+* **Explicit Evidence Requirement:** You must extract and cite explicit supporting evidence from the chat logs before marking any finding as Pass or Fail. 
+* Generate findings that describe the agent's *specific behaviour* rather than generic policy failures. Produce concise, customer-centric reasoning that explains why the behaviour created confusion or delayed resolution.
+* **Repetitive Guidance:** When a customer explicitly says a suggested solution has already failed, treat repeated guidance as a potential delayed resolution or repetitive incorrect guidance, rather than simply incomplete information.
+
+### Step 6: Claim Verification
+* When agents claim actions (e.g., updating a booking, creating notes, handling claims), verify whether the conversation textually confirms those actions or their authority to do so. 
+* If verification is missing, classify the issue as an "unverified promise" or "unsupported expectation" rather than a "confirmed false statement".
+
+### Step 7: Internal Validation & Logical Consistency
+* Perform a final consistency check. Verify that your findings, the assigned severity, the cited evidence, the root cause, and the final QA decision all logically align.
+* Ensure contradiction detection: the agent should not give conflicting information across the chat.
 
 ---
-## Required Evaluations
-Always evaluate for:
-* Wrong Issue Identification, Misleading Information, Unsupported Assumptions, Unverified Claims, Contradictory Statements, False Expectations, Incorrect Troubleshooting, Incorrect Policy Interpretation, Failure to Address the Customer's Actual Question, Escalation Failure, Booking Source Verification, Identity Disclosure, PNR Verification, Visa Guidance, Meal Guidance, Seat Guidance, Baggage Rules, Cancellation Rules, Refund Rules, Reschedule Rules
-If additional categories exist inside the uploaded JSON files, evaluate those as well.
-
----
-## Verification & Escalation Rules
-Never assume verification occurred. Only mark verification as completed when the conversation clearly demonstrates it. If verification is required by the JSON rules but is missing, report it.
-If the JSON states escalation is mandatory, verify that: The agent attempted reasonable troubleshooting. The customer was informed. The escalation actually occurred. The handoff was appropriate. If escalation was required but missing, report it.
-
----
-## Critical Errors
-If a rule is marked as Critical in the JSON knowledge base, classify it as Critical. Never downgrade a Critical rule.
-
----
-## Confidence & Evidence
-Every finding must include a confidence score between 0-100.
-The confidence score must be based only on evidence found in the conversation.
-Every finding must include the supporting chat messages. Only quote the relevant conversation. Never invent evidence.
-
----
-## Hallucination Prevention
-Never invent: Booking information, PNR details, Airline policies, Customer information, Verification, Escalations, Refund approvals, Baggage status
-Use only:
-1. Conversation
-2. Uploaded JSON knowledge base
-Formulate your findings using ONLY the JSON format specified below.
+## Confidence & Evidence Scoring
+* Every finding must include an internal confidence score (0-100).
+* The confidence score must be based solely on explicitly stated, confirmed evidence found in the conversation. Never invent evidence.
 
 ---
 ## Critical Considerations
-* **Context over Keywords:** Do not trigger a failure just because a keyword matches. Understand the context. (e.g. if a customer asks for a refund but the agent explains why they are not eligible according to policy, that is a PASSED interaction).
-* **Missing vs Hidden Info:** Sometimes agents don't have all information in the chat but can see it in their CRM. Give the agent the benefit of the doubt if their response implies they checked a system, unless the JSON explicitly requires them to ask for that information.
-* **Escalations:** If an agent escalates when they should have resolved it themselves according to the rules, mark it as "Escalation Delay" or "Failed".
-* **Language/Grammar:** Only flag grammatical errors if they are severe enough to cause confusion or if explicitly instructed by the rules. Do not fail for minor typos.
+* **Context over Keywords:** Do not trigger a failure just because a keyword matches. Understand the context.
+* **Missing vs Hidden Info:** Give the agent the benefit of the doubt if their response implies they checked a system, unless the JSON explicitly requires them to ask for that information.
+* **Escalations:** Verify if escalation was mandatory. If the agent escalated when they should have resolved it themselves, mark it as "Escalation Delay" or "Failed".
 * **AHT (Average Handling Time):** If there is a delay of 4 or more minutes between the customer's message and the agent's response without the agent warning the customer, flag this as an AHT delay issue.
 
 ---
 ## Special Cases
 * If the conversation has no errors, you must still return the JSON format, but with "status": "Passed", "qaScore": 100, and an empty "findings" array [].
-* No QA failures detected.
 
 ---
 ## Output Requirements
-Return only structured JSON. Do not return Markdown. Do not include explanations outside the JSON response.
+Return ONLY structured JSON matching the provided schema. Do not return Markdown. Do not include any text, reasoning blocks, or explanations outside the JSON response.
+
+---
+## Critical Chat Logs Extraction Rules
+When populating the "criticalChatLogs" array in the JSON output, follow these strict rules to keep evidence concise and readable:
+1. Include ONLY the messages directly related to the identified QA issue.
+2. Do not include greetings, acknowledgements, or unrelated conversation.
+3. Include only the evidence that proves: Customer intent, Agent response, Customer reaction (if relevant).
+4. Prefer 2–5 message exchanges for most cases.
+5. If the issue is based on repeated behaviour, include only: First occurrence, Final occurrence, and Customer objection.
+6. Remove duplicate messages that do not add new evidence.
+7. Every chat log included should answer: "Does this message help prove the QA finding?" If NO, exclude it.
+8. Keep the conversation chronological.
+9. Do not truncate important context, but avoid unnecessary history.
+10. The goal is to make the evidence concise, readable, and sufficient for QA review.
+
+Example of GOOD extraction:
+Customer: "I've already tried Manage My Booking. It isn't working."
+Agent: "Please use Manage My Booking to reschedule."
+Customer: "Can you reschedule it for me?"
+Agent: "I don't have the required access. Please contact call support."
 
 ## AI Prompt Studio (Dynamic Context)
 The following are critical instructions and examples provided by the admin. These instructions take precedence over general analysis rules.
@@ -277,7 +291,7 @@ ${errorTypesString}
 
 ---
 ## Analysis Rules JSON
-${JSON.stringify(corendonRules)}
+${rulesString}
 
 ${dynamicFindingSchema ? dynamicOutputSchema : defaultOutputSchema}
 `;
@@ -375,11 +389,25 @@ exports.analyzeChat = async (req, res) => {
     const providerName = aiProvider?.toUpperCase() || 'GROQ';
     let rawResponse = '';
     
+    // Prevent 413 Token Limit Errors (e.g. GitHub Models 8k limit for gpt-4o)
+    let safeConversationText = conversationText;
+    const isRestrictedProvider = providerName.includes('GITHUB');
+    
+    // For 8000 token limit (~32000 chars total):
+    // Allocate ~4000 chars for conversation, rest for system prompt.
+    const MAX_CONV_CHARS = isRestrictedProvider ? 4000 : 45000; 
+    
+    if (safeConversationText.length > MAX_CONV_CHARS) {
+      console.log(`Truncating conversation from ${safeConversationText.length} to ${MAX_CONV_CHARS} characters to respect token limits.`);
+      const half = Math.floor(MAX_CONV_CHARS / 2);
+      safeConversationText = safeConversationText.substring(0, half) + "\n\n...[CHAT TRUNCATED DUE TO API TOKEN LIMITS]...\n\n" + safeConversationText.substring(safeConversationText.length - half);
+    }
+
     console.log(`Detecting chat category locally...`);
-    const detectedCategory = detectChatCategory(conversationText);
+    const detectedCategory = detectChatCategory(safeConversationText);
     console.log(`Detected Category: ${detectedCategory}`);
     
-    const activeSystemPrompt = buildSystemPrompt(projectCards, detectedCategory);
+    const activeSystemPrompt = buildSystemPrompt(projectCards, detectedCategory, isRestrictedProvider);
 
     console.log(`Analyzing chat using ${providerName} (${aiModel})...`);
 
@@ -388,7 +416,10 @@ exports.analyzeChat = async (req, res) => {
       const completion = await groq.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: conversationText }
+          { 
+            role: 'user', 
+            content: `Analyze this conversation:\n\n${safeConversationText}\n\n**CRITICAL INSTRUCTION**: Perform a thorough step-by-step QA analysis of the conversation above. Strictly adhere to all rules in the JSON knowledge base. You must evaluate every applicable rule and provide detailed explanations. Output your final response ONLY as a valid JSON object matching the requested schema exactly.` 
+          }
         ],
         model: aiModel || 'llama-3.3-70b-versatile',
         temperature: 0.1,
@@ -402,7 +433,7 @@ exports.analyzeChat = async (req, res) => {
         model: aiModel || 'gemini-2.5-flash',
         generationConfig: { responseMimeType: 'application/json' }
       });
-      const result = await model.generateContent(`${activeSystemPrompt}\n\nAnalyze this conversation:\n${conversationText}`);
+      const result = await model.generateContent(`${activeSystemPrompt}\n\nAnalyze this conversation:\n${safeConversationText}`);
       rawResponse = result.response.text();
     }
     else if (providerName.includes('OPENAI')) {
@@ -410,7 +441,7 @@ exports.analyzeChat = async (req, res) => {
       const completion = await openai.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: conversationText }
+          { role: 'user', content: safeConversationText }
         ],
         model: aiModel || 'gpt-4o',
         temperature: 0.1,
@@ -425,7 +456,7 @@ exports.analyzeChat = async (req, res) => {
         max_tokens: 1500,
         temperature: 0.1,
         system: activeSystemPrompt,
-        messages: [{ role: 'user', content: conversationText }]
+        messages: [{ role: 'user', content: safeConversationText }]
       });
       rawResponse = completion.content[0].text;
     }
@@ -437,7 +468,7 @@ exports.analyzeChat = async (req, res) => {
       const completion = await deepseek.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: conversationText }
+          { role: 'user', content: safeConversationText }
         ],
         model: aiModel || 'deepseek-chat',
         temperature: 0.1,
@@ -453,7 +484,7 @@ exports.analyzeChat = async (req, res) => {
       const completion = await ollama.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: conversationText }
+          { role: 'user', content: safeConversationText }
         ],
         model: aiModel || 'llama3:latest',
         temperature: 0.1,
@@ -473,7 +504,7 @@ exports.analyzeChat = async (req, res) => {
       const completion = await openrouter.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: conversationText }
+          { role: 'user', content: safeConversationText }
         ],
         model: aiModel || 'meta-llama/llama-3.1-8b-instruct',
         temperature: 0.1,
@@ -489,7 +520,7 @@ exports.analyzeChat = async (req, res) => {
       const completion = await hf.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: conversationText }
+          { role: 'user', content: safeConversationText }
         ],
         model: aiModel || 'meta-llama/Llama-3.3-70B-Instruct',
         temperature: 0.1,
@@ -505,7 +536,7 @@ exports.analyzeChat = async (req, res) => {
       const completion = await cerebras.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: conversationText }
+          { role: 'user', content: safeConversationText }
         ],
         model: aiModel || 'llama3.1-70b',
         temperature: 0.1,
@@ -516,7 +547,7 @@ exports.analyzeChat = async (req, res) => {
     else if (providerName.includes('COHERE')) {
       const cohere = getCohereClient();
       const completion = await cohere.chat({
-        message: conversationText,
+        message: safeConversationText,
         preamble: activeSystemPrompt,
         model: aiModel || 'command-a-plus-05-2026',
         temperature: 0.1,
@@ -531,7 +562,7 @@ exports.analyzeChat = async (req, res) => {
       const completion = await github.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: conversationText }
+          { role: 'user', content: safeConversationText }
         ],
         model: aiModel || 'gpt-4o',
         temperature: 0.1,
