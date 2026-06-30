@@ -15,7 +15,7 @@ const getAnthropicClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_A
 const getCohereClient = () => new CohereClient({ token: process.env.COHERE_API_KEY || 'no-key' });
 
 // Build the base system prompt dynamically based on the Corendon Airlines instructions
-const buildSystemPrompt = (projectCards, detectedCategory = null, isRestricted = false) => {
+const buildSystemPrompt = (projectCards, detectedCategory = null, restrictionLevel = 0) => {
   const rulesPath = path.join(__dirname, '..', 'rules', 'corendon_rules.json');
   const promptContextPath = path.join(__dirname, '..', 'rules', 'prompt_context.json');
   
@@ -25,12 +25,21 @@ const buildSystemPrompt = (projectCards, detectedCategory = null, isRestricted =
   try {
     const fileData = fs.readFileSync(rulesPath, 'utf8');
     corendonRules = JSON.parse(fileData);
-    if (detectedCategory && corendonRules.rules) {
-      corendonRules.rules = corendonRules.rules.filter(r => 
-        r.category.toLowerCase() === detectedCategory.toLowerCase() || 
-        r.category.toLowerCase() === 'random (any issue)' ||
-        r.category.toLowerCase() === 'other'
-      );
+    
+    // Explicit Category Filtering (Manual User Selection)
+    if (detectedCategory && detectedCategory !== 'Auto-Detect' && detectedCategory !== 'Other' && detectedCategory !== 'Random (Any Issue)') {
+      const globalCategories = ['Booking', 'Cancellation', 'Reschedule', 'Refund'];
+      
+      corendonRules.rules = corendonRules.rules.filter(r => {
+        // Keep rule if it explicitly matches the chosen category
+        if (r.category === detectedCategory) return true;
+        
+        // Ensure "Booking Source Verification" (stored in Cancellation rule block) 
+        // is injected for the 4 specific global categories as requested by user.
+        if (r.id === 'cancellation' && globalCategories.includes(detectedCategory)) return true;
+        
+        return false;
+      });
     }
   } catch (err) {
     console.error('Could not load corendon_rules.json', err);
@@ -75,9 +84,7 @@ ${promptContext.globalInstructions || 'No custom global instructions provided.'}
       if (category === '_GlobalExample') return ''; // Ignore old format if present
       if (!data.globalInstructions && !data.perfectExample) return '';
       
-      if (detectedCategory && category.toLowerCase() !== detectedCategory.toLowerCase() && category.toLowerCase() !== 'other') {
-        return '';
-      }
+      // Include ALL categories - do not filter out cross-cutting policies
       
       let contextStr = `\n#### [Category: ${category}]\n`;
       if (data.globalInstructions) {
@@ -136,7 +143,7 @@ You MUST return your response as a valid JSON object with EXACTLY this structure
 
   "criticalChatLogs": [
     { 
-      "speaker": "<Customer or Agent Name>", 
+      "speaker": "<MUST use the ACTUAL REAL NAME of the person speaking, e.g., 'Dennis (Agent)' or 'Makayla Mendoza (Customer)'. DO NOT use dummy names like 'Agent' or 'Customer'.>", 
       "message": "<Exact message text. Follow the 'Critical Chat Logs Extraction Rules' strictly>" 
     }
   ],
@@ -187,8 +194,10 @@ ${JSON.stringify(dynamicFindingSchema, null, 4)}
 }`;
 
   let rulesString = JSON.stringify(corendonRules);
-  if (isRestricted && rulesString.length > 15000) {
-    rulesString = rulesString.substring(0, 15000) + '...[RULES TRUNCATED DUE TO API LIMITS]"}';
+  if (restrictionLevel === 1 && rulesString.length > 8000) {
+    rulesString = rulesString.substring(0, 8000) + '...[RULES TRUNCATED DUE TO API LIMITS]"}';
+  } else if (restrictionLevel === 2 && rulesString.length > 2000) {
+    rulesString = rulesString.substring(0, 2000) + '...[RULES TRUNCATED DUE TO EXTREME API LIMITS]"}';
   }
 
   return `
@@ -245,11 +254,42 @@ Always perform the following reasoning steps in order:
 * The confidence score must be based solely on explicitly stated, confirmed evidence found in the conversation. Never invent evidence.
 
 ---
-## Critical Considerations
+## Critical Considerations & Mandatory Checks
+* **MANDATORY RULE EVALUATION:** You MUST carefully read and evaluate EVERY SINGLE RULE in the provided JSON against the conversation. You must not skip any policy constraints (e.g., verifying booking sources before giving information).
+* **MANDATORY AHT CALCULATION (CRITICAL):** You MUST mathematically calculate the time difference between the customer's message timestamp and the agent's response timestamp. If the difference is 4 minutes or greater, and the agent did not provide a prior hold warning, you MUST flag it as an AHT failure. Do not skip this calculation. Only use timestamps that are explicitly present in the conversation — do NOT fabricate or estimate timestamps.
 * **Context over Keywords:** Do not trigger a failure just because a keyword matches. Understand the context.
 * **Missing vs Hidden Info:** Give the agent the benefit of the doubt if their response implies they checked a system, unless the JSON explicitly requires them to ask for that information.
 * **Escalations:** Verify if escalation was mandatory. If the agent escalated when they should have resolved it themselves, mark it as "Escalation Delay" or "Failed".
-* **AHT (Average Handling Time):** If there is a delay of 4 or more minutes between the customer's message and the agent's response without the agent warning the customer, flag this as an AHT delay issue.
+
+---
+## Mandatory Fail Checklist (MUST evaluate every item)
+Before finalizing your verdict, you MUST check each of the following. If ANY item is true, the conversation CANNOT be marked as "Passed":
+1. **Missing Booking Reference:** Did the agent collect the booking reference (PNR) before providing policy guidance? If NO → FAIL.
+2. **Repeated Questions:** Did the agent ask a question that the customer already answered? If YES → FAIL (finding).
+3. **Missing Passenger Name Verification:** Did the agent verify the passenger's full name? If not collected → note as finding.
+4. **Booking Source Verification:** For cancellation/refund/reschedule/booking queries, did the agent verify whether the booking was made directly or through a third party? If NO → FAIL.
+5. **Misleading Guidance:** Did the agent provide advice that could confuse the customer or contradict the actual policy? If YES → FAIL.
+6. **Unverified Commitments:** Did the agent promise something they cannot confirm (e.g., refund timeline, seat availability)? If YES → FAIL.
+7. **AHT Delay:** Was there a gap of 4+ minutes between customer message and agent response without warning? If YES → FAIL.
+
+Only after confirming ALL 7 items are clear can you assign "Passed".
+
+---
+## Consistency & Determinism Rules
+* Your analysis must be DETERMINISTIC. Given the same conversation and the same rules, you must always produce the same verdict.
+* Do NOT allow superficial formatting differences (e.g., speaker labels, timestamps, whitespace) to change your analytical conclusions.
+* Evaluate the SUBSTANCE of what was said, not how names are formatted.
+* Do NOT fabricate or hallucinate timestamps, durations, or evidence that does not exist in the conversation.
+
+---
+## LOGICAL CONSISTENCY ENFORCEMENT (CRITICAL — DO NOT VIOLATE)
+Your findings and your final verdict MUST be logically aligned. Apply these rules strictly:
+
+1. **If ANY finding has status "Fail"** → the qaConclusion.status MUST be "QA Failed" and the top-level status MUST be "Failed" or "Warning". It is LOGICALLY IMPOSSIBLE for the status to be "Passed" when any finding is "Fail".
+2. **If a finding says "could have" or "should have"** → that means the agent DID NOT do it, which means it is a FAILURE, not a Pass. Mark it as "Fail".
+3. **If the agent did not collect a booking reference (PNR)** → the "Mandatory Information Gathering" finding MUST be "Fail", not "Pass". Do NOT write "Pass" and then say "but could have asked for PNR" — that is contradictory.
+4. **qaFinding must reflect actual issues found.** If you found failures, do NOT write "No QA Error Found". Write a summary of the actual failures.
+5. **qaScore must reflect the number and severity of failures.** A conversation with 1 Fail finding cannot score above 80. A conversation with 2+ Fail findings cannot score above 65.
 
 ---
 ## Special Cases
@@ -260,18 +300,15 @@ Always perform the following reasoning steps in order:
 Return ONLY structured JSON matching the provided schema. Do not return Markdown. Do not include any text, reasoning blocks, or explanations outside the JSON response.
 
 ---
-## Critical Chat Logs Extraction Rules
-When populating the "criticalChatLogs" array in the JSON output, follow these strict rules to keep evidence concise and readable:
-1. Include ONLY the messages directly related to the identified QA issue.
-2. Do not include greetings, acknowledgements, or unrelated conversation.
-3. Include only the evidence that proves: Customer intent, Agent response, Customer reaction (if relevant).
-4. Prefer 2–5 message exchanges for most cases.
-5. If the issue is based on repeated behaviour, include only: First occurrence, Final occurrence, and Customer objection.
-6. Remove duplicate messages that do not add new evidence.
-7. Every chat log included should answer: "Does this message help prove the QA finding?" If NO, exclude it.
-8. Keep the conversation chronological.
-9. Do not truncate important context, but avoid unnecessary history.
-10. The goal is to make the evidence concise, readable, and sufficient for QA review.
+## Critical Chat Logs Extraction Rules (HARD LIMIT: MAXIMUM 4 MESSAGES)
+When populating the "criticalChatLogs" array in the JSON output, you MUST follow these strict boundaries:
+1. **HARD LIMIT OF 4 MESSAGES:** You are STRICTLY FORBIDDEN from returning more than 4 messages total in the array. If you output 5 or more messages, you have failed.
+2. **HUNT FOR THE ERROR:** Do not blindly copy from the beginning of the chat. You must scan the chat, find the exact moment the agent made a mistake (or provided critical info), and ONLY extract that specific 2-to-4 message exchange (e.g., Customer asks question -> Agent gives wrong answer).
+3. **STRICTLY NO FULL CHAT DUMPS:** Never include the entire conversation.
+4. **DO NOT INCLUDE NOISE:** Exclude greetings, closing remarks, holding messages, and unrelated pleasantries.
+5. **EVIDENCE ONLY:** Include only the customer intent, the agent's failing/critical response, and the customer's reaction to it.
+6. **USE REAL NAMES:** When defining the "speaker", you MUST use the actual real name of the person speaking from the chat (e.g., "Dennis (Agent)" or "Makayla Mendoza (Customer)"). DO NOT use generic dummy labels like "Agent" or "Customer" alone.
+7. Every chat log included MUST answer: "Does this message directly prove the QA finding?" If NO, exclude it.
 
 Example of GOOD extraction:
 Customer: "I've already tried Manage My Booking. It isn't working."
@@ -389,13 +426,15 @@ exports.analyzeChat = async (req, res) => {
     const providerName = aiProvider?.toUpperCase() || 'GROQ';
     let rawResponse = '';
     
-    // Prevent 413 Token Limit Errors (e.g. GitHub Models 8k limit for gpt-4o)
+    // Prevent 413 Token Limit Errors (e.g. GitHub Models 8k limit, DeepSeek R1 4k limit)
     let safeConversationText = conversationText;
-    const isRestrictedProvider = providerName.includes('GITHUB');
+    const isR1 = (aiModel || '').toLowerCase().includes('r1');
+    const isGitHub = providerName.includes('GITHUB');
+    const restrictionLevel = isR1 ? 2 : (isGitHub ? 1 : 0);
     
-    // For 8000 token limit (~32000 chars total):
-    // Allocate ~4000 chars for conversation, rest for system prompt.
-    const MAX_CONV_CHARS = isRestrictedProvider ? 4000 : 45000; 
+    let MAX_CONV_CHARS = 45000;
+    if (restrictionLevel === 1) MAX_CONV_CHARS = 4000;
+    if (restrictionLevel === 2) MAX_CONV_CHARS = 2000;
     
     if (safeConversationText.length > MAX_CONV_CHARS) {
       console.log(`Truncating conversation from ${safeConversationText.length} to ${MAX_CONV_CHARS} characters to respect token limits.`);
@@ -407,7 +446,10 @@ exports.analyzeChat = async (req, res) => {
     const detectedCategory = detectChatCategory(safeConversationText);
     console.log(`Detected Category: ${detectedCategory}`);
     
-    const activeSystemPrompt = buildSystemPrompt(projectCards, detectedCategory, isRestrictedProvider);
+    const activeSystemPrompt = buildSystemPrompt(projectCards, detectedCategory, restrictionLevel);
+
+    // Build the analysis user message once — used by ALL providers for consistency
+    const analysisUserMessage = `Analyze this conversation:\n\n${safeConversationText}\n\n**CRITICAL INSTRUCTION**: Perform a thorough step-by-step QA analysis of the conversation above. Strictly adhere to all rules in the JSON knowledge base. You must evaluate every applicable rule and provide detailed explanations. Check for: missing mandatory information gathering, repeated questions, AHT delays, misleading guidance, and unverified claims. Output your final response ONLY as a valid JSON object matching the requested schema exactly.`;
 
     console.log(`Analyzing chat using ${providerName} (${aiModel})...`);
 
@@ -416,13 +458,10 @@ exports.analyzeChat = async (req, res) => {
       const completion = await groq.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { 
-            role: 'user', 
-            content: `Analyze this conversation:\n\n${safeConversationText}\n\n**CRITICAL INSTRUCTION**: Perform a thorough step-by-step QA analysis of the conversation above. Strictly adhere to all rules in the JSON knowledge base. You must evaluate every applicable rule and provide detailed explanations. Output your final response ONLY as a valid JSON object matching the requested schema exactly.` 
-          }
+          { role: 'user', content: analysisUserMessage }
         ],
         model: aiModel || 'llama-3.3-70b-versatile',
-        temperature: 0.1,
+        temperature: 0,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
@@ -433,7 +472,7 @@ exports.analyzeChat = async (req, res) => {
         model: aiModel || 'gemini-2.5-flash',
         generationConfig: { responseMimeType: 'application/json' }
       });
-      const result = await model.generateContent(`${activeSystemPrompt}\n\nAnalyze this conversation:\n${safeConversationText}`);
+      const result = await model.generateContent(`${activeSystemPrompt}\n\n${analysisUserMessage}`);
       rawResponse = result.response.text();
     }
     else if (providerName.includes('OPENAI')) {
@@ -441,10 +480,10 @@ exports.analyzeChat = async (req, res) => {
       const completion = await openai.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: safeConversationText }
+          { role: 'user', content: analysisUserMessage }
         ],
         model: aiModel || 'gpt-4o',
-        temperature: 0.1,
+        temperature: 0,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
@@ -454,9 +493,9 @@ exports.analyzeChat = async (req, res) => {
       const completion = await anthropic.messages.create({
         model: aiModel || 'claude-3-5-sonnet-20241022',
         max_tokens: 1500,
-        temperature: 0.1,
+        temperature: 0,
         system: activeSystemPrompt,
-        messages: [{ role: 'user', content: safeConversationText }]
+        messages: [{ role: 'user', content: analysisUserMessage }]
       });
       rawResponse = completion.content[0].text;
     }
@@ -468,10 +507,10 @@ exports.analyzeChat = async (req, res) => {
       const completion = await deepseek.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: safeConversationText }
+          { role: 'user', content: analysisUserMessage }
         ],
         model: aiModel || 'deepseek-chat',
-        temperature: 0.1,
+        temperature: 0,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
@@ -484,10 +523,10 @@ exports.analyzeChat = async (req, res) => {
       const completion = await ollama.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: safeConversationText }
+          { role: 'user', content: analysisUserMessage }
         ],
         model: aiModel || 'llama3:latest',
-        temperature: 0.1,
+        temperature: 0,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
@@ -504,10 +543,11 @@ exports.analyzeChat = async (req, res) => {
       const completion = await openrouter.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: safeConversationText }
+          { role: 'user', content: analysisUserMessage }
         ],
         model: aiModel || 'meta-llama/llama-3.1-8b-instruct',
-        temperature: 0.1,
+        temperature: 0,
+        max_tokens: 4000,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
@@ -520,26 +560,28 @@ exports.analyzeChat = async (req, res) => {
       const completion = await hf.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: safeConversationText }
+          { role: 'user', content: analysisUserMessage }
         ],
         model: aiModel || 'meta-llama/Llama-3.3-70B-Instruct',
-        temperature: 0.1,
-        max_tokens: 2000
+        temperature: 0,
+        max_tokens: 4000,
+        response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
     }
     else if (providerName.includes('CEREBRAS')) {
       const cerebras = new OpenAI({
         apiKey: process.env.CEREBRAS_API_KEY || 'no-key',
-        baseURL: 'https://api.cerebras.ai/v1'
+        baseURL: 'https://api.cerebras.ai/v1',
+        timeout: 45000
       });
       const completion = await cerebras.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: safeConversationText }
+          { role: 'user', content: analysisUserMessage }
         ],
-        model: aiModel || 'llama3.1-70b',
-        temperature: 0.1,
+        model: aiModel || 'llama-3.3-70b',
+        temperature: 0,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
@@ -547,10 +589,10 @@ exports.analyzeChat = async (req, res) => {
     else if (providerName.includes('COHERE')) {
       const cohere = getCohereClient();
       const completion = await cohere.chat({
-        message: safeConversationText,
+        message: analysisUserMessage,
         preamble: activeSystemPrompt,
         model: aiModel || 'command-a-plus-05-2026',
-        temperature: 0.1,
+        temperature: 0,
       });
       rawResponse = completion.text;
     }
@@ -562,10 +604,10 @@ exports.analyzeChat = async (req, res) => {
       const completion = await github.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: safeConversationText }
+          { role: 'user', content: analysisUserMessage }
         ],
         model: aiModel || 'gpt-4o',
-        temperature: 0.1,
+        temperature: 0,
         max_tokens: 2048,
         response_format: { type: 'json_object' }
       });
