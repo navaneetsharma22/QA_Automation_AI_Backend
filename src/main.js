@@ -12,6 +12,7 @@ const usersRouter = require('./routes/users.routes');
 const projectsRouter = require('./routes/projects.routes');
 const errorTypesRouter = require('./routes/errorTypes.routes');
 const crmRouter = require('./routes/crm.routes');
+const qcRouter = require('./routes/qc.routes');
 
 const app = express();
 const mongoose = require('mongoose');
@@ -52,6 +53,7 @@ apiRouter.use('/users', usersRouter);
 apiRouter.use('/projects', projectsRouter);
 apiRouter.use('/errortypes', errorTypesRouter);
 apiRouter.use('/crm', crmRouter);
+apiRouter.use('/qc', qcRouter);
 
 app.use('/api/v1', apiRouter);
 

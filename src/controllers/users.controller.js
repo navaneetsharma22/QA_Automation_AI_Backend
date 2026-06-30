@@ -40,7 +40,7 @@ exports.createUser = (req, res) => {
       email,
       password,
       role: 'User',
-      sidebarAccess: req.body.sidebarAccess || ['dashboard', 'analyze', 'history', 'reports', 'prompts', 'knowledge', 'models', 'analytics', 'settings', 'profile'],
+      sidebarAccess: req.body.sidebarAccess || ['dashboard', 'crm-chats', 'analyze', 'history', 'reports', 'prompts', 'knowledge', 'models', 'analytics', 'settings', 'profile'],
       isBlocked: false,
       createdAt: new Date().toISOString()
     };
