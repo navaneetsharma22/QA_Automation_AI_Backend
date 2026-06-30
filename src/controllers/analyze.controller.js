@@ -84,7 +84,10 @@ ${promptContext.globalInstructions || 'No custom global instructions provided.'}
       if (category === '_GlobalExample') return ''; // Ignore old format if present
       if (!data.globalInstructions && !data.perfectExample) return '';
       
-      // Include ALL categories - do not filter out cross-cutting policies
+      // Explicit Category Filtering for Context
+      if (detectedCategory && detectedCategory !== 'Auto-Detect' && detectedCategory !== 'Other' && detectedCategory !== 'Random (Any Issue)') {
+        if (category !== detectedCategory) return ''; // Only inject context for selected category
+      }
       
       let contextStr = `\n#### [Category: ${category}]\n`;
       if (data.globalInstructions) {
@@ -95,6 +98,12 @@ ${promptContext.globalInstructions || 'No custom global instructions provided.'}
       }
       return contextStr;
     }).filter(str => str !== '').join('\n');
+    
+    if (restrictionLevel === 1 && categoryContextString.length > 4000) {
+      categoryContextString = categoryContextString.substring(0, 4000) + '\n...[CONTEXT TRUNCATED DUE TO API LIMITS]';
+    } else if (restrictionLevel === 2 && categoryContextString.length > 500) {
+      categoryContextString = categoryContextString.substring(0, 500) + '\n...[CONTEXT TRUNCATED DUE TO EXTREME API LIMITS]';
+    }
     
     if (!categoryContextString.trim()) {
       categoryContextString = 'No custom category instructions provided.';
@@ -196,8 +205,8 @@ ${JSON.stringify(dynamicFindingSchema, null, 4)}
   let rulesString = JSON.stringify(corendonRules);
   if (restrictionLevel === 1 && rulesString.length > 8000) {
     rulesString = rulesString.substring(0, 8000) + '...[RULES TRUNCATED DUE TO API LIMITS]"}';
-  } else if (restrictionLevel === 2 && rulesString.length > 2000) {
-    rulesString = rulesString.substring(0, 2000) + '...[RULES TRUNCATED DUE TO EXTREME API LIMITS]"}';
+  } else if (restrictionLevel === 2 && rulesString.length > 1000) {
+    rulesString = rulesString.substring(0, 1000) + '...[RULES TRUNCATED DUE TO EXTREME API LIMITS]"}';
   }
 
   return `
@@ -403,6 +412,38 @@ const detectChatCategory = (conversationText) => {
   return bestCategory;
 };
 
+const cleanChatTranscript = (rawText) => {
+  if (!rawText) return rawText;
+  
+  let cleaned = rawText;
+  
+  // 1. Convert Date & Time to just [Time]
+  cleaned = cleaned.replace(/^\d{1,2}\s+[A-Za-z]{3},\s+(\d{2}:\d{2}\s+[ap]m)\s+IST\s*/gm, '[$1]\n');
+  
+  // 2. Remove "X minutes ago"
+  cleaned = cleaned.replace(/^\d+\s+(minute|hour)s?\s+ago\s*/gm, '');
+  
+  // 3. Remove stray single-letter initials on their own line
+  cleaned = cleaned.replace(/^[A-Z]\r?\n/gm, '');
+  
+  // 4. Remove UI status events
+  cleaned = cleaned.replace(/^.*has accepted this query.*\s*/gm, '');
+  cleaned = cleaned.replace(/^Your query has been escalated.*\s*/gm, '');
+  cleaned = cleaned.replace(/^Transfer from.*accepted by.*\s*/gm, '');
+  cleaned = cleaned.replace(/^Reason:.*\s*/gm, '');
+  cleaned = cleaned.replace(/^Concern:.*\s*/gm, '');
+  cleaned = cleaned.replace(/^Steps Performed:.*\s*/gm, '');
+  cleaned = cleaned.replace(/^Reason for Escalation:.*\s*/gm, '');
+  
+  // 5. Remove multiple empty lines
+  cleaned = cleaned.replace(/\n{2,}/g, '\n');
+  
+  // 6. Compress Time + Speaker Name onto one line
+  cleaned = cleaned.replace(/^(\[\d{2}:\d{2}\s+[ap]m\])\n([^\n]+)\n/gm, '\n$1 $2:\n');
+  
+  return cleaned.trim();
+};
+
 exports.analyzeChat = async (req, res) => {
   try {
     const { conversationText, aiProvider, aiModel, projectId } = req.body;
@@ -410,6 +451,9 @@ exports.analyzeChat = async (req, res) => {
     if (!conversationText) {
       return res.status(400).json({ error: 'Conversation text is required' });
     }
+    
+    // Compress the UI noise out of the chat transcript before it reaches the AI
+    const cleanedConversationText = cleanChatTranscript(conversationText);
 
     let projectCards = [];
     if (projectId && projectId !== 'default') {
@@ -427,14 +471,15 @@ exports.analyzeChat = async (req, res) => {
     let rawResponse = '';
     
     // Prevent 413 Token Limit Errors (e.g. GitHub Models 8k limit, DeepSeek R1 4k limit)
-    let safeConversationText = conversationText;
+    let safeConversationText = cleanedConversationText;
     const isR1 = (aiModel || '').toLowerCase().includes('r1');
     const isGitHub = providerName.includes('GITHUB');
-    const restrictionLevel = isR1 ? 2 : (isGitHub ? 1 : 0);
+    const isGroq = providerName.includes('GROQ');
+    const restrictionLevel = isR1 ? 2 : ((isGitHub || isGroq) ? 1 : 0);
     
     let MAX_CONV_CHARS = 45000;
     if (restrictionLevel === 1) MAX_CONV_CHARS = 4000;
-    if (restrictionLevel === 2) MAX_CONV_CHARS = 2000;
+    if (restrictionLevel === 2) MAX_CONV_CHARS = 1500;
     
     if (safeConversationText.length > MAX_CONV_CHARS) {
       console.log(`Truncating conversation from ${safeConversationText.length} to ${MAX_CONV_CHARS} characters to respect token limits.`);
@@ -608,7 +653,7 @@ exports.analyzeChat = async (req, res) => {
         ],
         model: aiModel || 'gpt-4o',
         temperature: 0,
-        max_tokens: 2048,
+        max_tokens: isR1 ? 800 : 4000,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
