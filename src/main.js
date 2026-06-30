@@ -11,6 +11,8 @@ const promptRouter = require('./routes/prompt.routes');
 const usersRouter = require('./routes/users.routes');
 const projectsRouter = require('./routes/projects.routes');
 
+const errorTypesRouter = require('./routes/errorTypes.routes');
+
 const app = express();
 const mongoose = require('mongoose');
 
@@ -48,6 +50,7 @@ apiRouter.use('/rules', rulesRouter);
 apiRouter.use('/prompt', promptRouter);
 apiRouter.use('/users', usersRouter);
 apiRouter.use('/projects', projectsRouter);
+apiRouter.use('/errortypes', errorTypesRouter);
 
 app.use('/api/v1', apiRouter);
 

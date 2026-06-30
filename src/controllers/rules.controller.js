@@ -17,9 +17,9 @@ exports.getRules = (req, res) => {
 
 exports.addRuleCategory = (req, res) => {
   try {
-    const { category, severity, description } = req.body;
+    const { category, description } = req.body;
     
-    if (!category || !severity || !description) {
+    if (!category || !description) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -29,7 +29,6 @@ exports.addRuleCategory = (req, res) => {
     const newRule = {
       id: category.toLowerCase().replace(/\s+/g, '_'),
       category: category,
-      severity: severity,
       description: description,
       detection_checks: [
         "Compare customer intent with agent response",
@@ -60,9 +59,9 @@ exports.addRuleCategory = (req, res) => {
 exports.updateRuleCategory = (req, res) => {
   try {
     const ruleId = req.params.id;
-    const { category, severity, description } = req.body;
+    const { category, description } = req.body;
 
-    if (!category || !severity || !description) {
+    if (!category || !description) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
@@ -78,7 +77,6 @@ exports.updateRuleCategory = (req, res) => {
     rulesConfig.rules[ruleIndex] = {
       ...rulesConfig.rules[ruleIndex],
       category,
-      severity,
       description
     };
 

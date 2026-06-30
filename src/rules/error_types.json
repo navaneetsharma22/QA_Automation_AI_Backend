@@ -1,0 +1,47 @@
+[
+  {
+    "id": "aht",
+    "name": "AHT (Average Handle Time)",
+    "description": "Agent took too long to respond to the customer (e.g. more than 3 minutes between messages without warning)."
+  },
+  {
+    "id": "art",
+    "name": "ART (Agent Response Time)",
+    "description": "Initial response time was too slow."
+  },
+  {
+    "id": "critical",
+    "name": "CRITICAL",
+    "description": "A severe policy violation or critical failure according to the core rules."
+  },
+  {
+    "id": "misleading",
+    "name": "MISLEADING",
+    "description": "Agent provided false, inaccurate, or unsupported information to the customer."
+  },
+  {
+    "id": "grammatical",
+    "name": "GRAMMATICAL",
+    "description": "Significant grammar or spelling errors that affect comprehension."
+  },
+  {
+    "id": "wrong_identification",
+    "name": "WRONG IDENTIFICATION",
+    "description": "Agent addressed the wrong issue or completely misunderstood the customer's intent."
+  },
+  {
+    "id": "escalation_delay",
+    "name": "Escalation Delay",
+    "description": "Agent failed to escalate the issue to the proper tier when required, or delayed it unnecessarily."
+  },
+  {
+    "id": "in_progress",
+    "name": "In Progress",
+    "description": "The issue is currently being resolved."
+  },
+  {
+    "id": "none",
+    "name": "None",
+    "description": "No errors found."
+  }
+]

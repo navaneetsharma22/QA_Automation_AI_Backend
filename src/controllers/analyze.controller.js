@@ -15,7 +15,7 @@ const getAnthropicClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_A
 const getCohereClient = () => new CohereClient({ token: process.env.COHERE_API_KEY || 'no-key' });
 
 // Build the base system prompt dynamically based on the Corendon Airlines instructions
-const buildSystemPrompt = (projectCards) => {
+const buildSystemPrompt = (projectCards, detectedCategory = null) => {
   const rulesPath = path.join(__dirname, '..', 'rules', 'corendon_rules.json');
   const promptContextPath = path.join(__dirname, '..', 'rules', 'prompt_context.json');
   
@@ -25,6 +25,13 @@ const buildSystemPrompt = (projectCards) => {
   try {
     const fileData = fs.readFileSync(rulesPath, 'utf8');
     corendonRules = JSON.parse(fileData);
+    if (detectedCategory && corendonRules.rules) {
+      corendonRules.rules = corendonRules.rules.filter(r => 
+        r.category.toLowerCase() === detectedCategory.toLowerCase() || 
+        r.category.toLowerCase() === 'random (any issue)' ||
+        r.category.toLowerCase() === 'other'
+      );
+    }
   } catch (err) {
     console.error('Could not load corendon_rules.json', err);
   }
@@ -37,6 +44,22 @@ const buildSystemPrompt = (projectCards) => {
   } catch (err) {
     console.error('Could not load prompt_context.json', err);
   }
+
+  let errorTypesContext = [];
+  const errorTypesPath = path.join(__dirname, '..', 'rules', 'error_types.json');
+  try {
+    if (fs.existsSync(errorTypesPath)) {
+      const etData = fs.readFileSync(errorTypesPath, 'utf8');
+      errorTypesContext = JSON.parse(etData);
+    }
+  } catch (err) {
+    console.error('Could not load error_types.json', err);
+  }
+
+  let errorTypesString = errorTypesContext.length > 0
+    ? errorTypesContext.map(et => `- **${et.name}**: ${et.description}`).join('\n')
+    : '- **AHT**: Agent took too long.\n- **MISLEADING**: False information.\n- **CRITICAL**: Severe violation.';
+
 
   let categoryContextString = '';
 
@@ -52,6 +75,10 @@ ${promptContext.globalInstructions || 'No custom global instructions provided.'}
       if (category === '_GlobalExample') return ''; // Ignore old format if present
       if (!data.globalInstructions && !data.perfectExample) return '';
       
+      if (detectedCategory && category.toLowerCase() !== detectedCategory.toLowerCase() && category.toLowerCase() !== 'other') {
+        return '';
+      }
+      
       let contextStr = `\n#### [Category: ${category}]\n`;
       if (data.globalInstructions) {
         contextStr += `**Policy & Context**:\n${data.globalInstructions}\n`;
@@ -60,12 +87,12 @@ ${promptContext.globalInstructions || 'No custom global instructions provided.'}
         contextStr += `\n**Perfect Output Example**:\n${data.perfectExample}\n`;
       }
       return contextStr;
-    }).join('\n');
+    }).filter(str => str !== '').join('\n');
     
     if (!categoryContextString.trim()) {
       categoryContextString = 'No custom category instructions provided.';
     } else {
-      categoryContextString = 'First, determine the actual customer intent (category) of the chat. Then, locate the corresponding category below and follow its Policy and Example STRICTLY:\n' + categoryContextString;
+      categoryContextString = (detectedCategory ? `Chat has been identified as Category: ${detectedCategory}\n` : 'First, determine the actual customer intent (category) of the chat. Then, locate the corresponding category below and follow its Policy and Example STRICTLY:\n') + categoryContextString;
     }
   }
 
@@ -227,7 +254,7 @@ Formulate your findings using ONLY the JSON format specified below.
 * **Missing vs Hidden Info:** Sometimes agents don't have all information in the chat but can see it in their CRM. Give the agent the benefit of the doubt if their response implies they checked a system, unless the JSON explicitly requires them to ask for that information.
 * **Escalations:** If an agent escalates when they should have resolved it themselves according to the rules, mark it as "Escalation Delay" or "Failed".
 * **Language/Grammar:** Only flag grammatical errors if they are severe enough to cause confusion or if explicitly instructed by the rules. Do not fail for minor typos.
-* **AHT (Average Handling Time):** If the agent took too long to respond (e.g. more than 3 minutes between messages without warning the customer), or made the customer repeat themselves unnecessarily, flag this as an AHT issue.
+* **AHT (Average Handling Time):** If there is a delay of 4 or more minutes between the customer's message and the agent's response without the agent warning the customer, flag this as an AHT delay issue.
 
 ---
 ## Special Cases
@@ -244,11 +271,85 @@ The following are critical instructions and examples provided by the admin. Thes
 ${categoryContextString}
 
 ---
+## Error Types (Severity Definitions)
+Use the following definitions to classify the severity of any found errors. Assign the corresponding Error Type name exactly as shown:
+${errorTypesString}
+
+---
 ## Analysis Rules JSON
 ${JSON.stringify(corendonRules)}
 
 ${dynamicFindingSchema ? dynamicOutputSchema : defaultOutputSchema}
 `;
+};
+
+const detectChatCategory = (conversationText) => {
+  // Dynamically build the valid categories from admin-configured data
+  const rulesPath = path.join(__dirname, '..', 'rules', 'corendon_rules.json');
+  const promptContextPath = path.join(__dirname, '..', 'rules', 'prompt_context.json');
+
+  const categorySet = new Set();
+  try {
+    const rulesData = JSON.parse(fs.readFileSync(rulesPath, 'utf8'));
+    if (rulesData.rules) {
+      rulesData.rules.forEach(r => categorySet.add(r.category));
+    }
+  } catch (err) { /* ignore */ }
+
+  try {
+    if (fs.existsSync(promptContextPath)) {
+      const pcData = JSON.parse(fs.readFileSync(promptContextPath, 'utf8'));
+      Object.keys(pcData).forEach(k => categorySet.add(k));
+    }
+  } catch (err) { /* ignore */ }
+
+  // Remove generic entries
+  const ignoreList = ['Random (Any Issue)', 'Misleading', 'Wrong Issue Identification', 'Unsupported Assumption', 'Unverified Claim', 'Contradiction', 'False Promise', 'Policy Violation', 'Escalation Failure', 'Incorrect Troubleshooting', 'Failure to Answer', 'Other', '_GlobalExample'];
+  ignoreList.forEach(item => categorySet.delete(item));
+
+  const validCategories = [...categorySet];
+  console.log(`Dynamic categories for local detection: ${validCategories.join(', ')}`);
+
+  // Local Keyword-based detection (Zero AI Tokens)
+  const text = conversationText.toLowerCase();
+  
+  // Base keywords mapping (fallback to category name if not mapped)
+  const keywordMap = {
+    'booking': ['booking', 'book', 'pay', 'payment', 'ticket', 'name change', 'deducted', 'transaction'],
+    'cancellation': ['cancel', 'cancellation', 'refund', 'money back'],
+    'reschedule': ['reschedule', 'change flight', 'new date', 'change fee', 'change my flight'],
+    'baggage': ['baggage', 'luggage', 'pir', 'lost', 'bag', 'belt', 'carousel', 'item left'],
+    'check-in': ['check-in', 'check in', 'boarding pass', 'online check', 'boarding'],
+    'meal / seat': ['meal', 'food', 'seat', 'allergy', 'wifi', 'wi-fi', 'legroom', 'drink']
+  };
+
+  let bestCategory = 'Other';
+  let maxScore = 0;
+
+  for (const cat of validCategories) {
+    const catLower = cat.toLowerCase();
+    // Use predefined keywords if available, otherwise just use the category name itself
+    const keywordsToCheck = keywordMap[catLower] || [catLower];
+    
+    let score = 0;
+    for (const word of keywordsToCheck) {
+      // Escape word for regex
+      const safeWord = word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp('\\b' + safeWord + '\\b', 'g');
+      const matches = text.match(regex);
+      if (matches) {
+        score += matches.length;
+      }
+    }
+
+    if (score > maxScore) {
+      maxScore = score;
+      bestCategory = cat;
+    }
+  }
+
+  console.log(`Locally Detected Category: ${bestCategory} (Score: ${maxScore})`);
+  return bestCategory;
 };
 
 exports.analyzeChat = async (req, res) => {
@@ -274,7 +375,11 @@ exports.analyzeChat = async (req, res) => {
     const providerName = aiProvider?.toUpperCase() || 'GROQ';
     let rawResponse = '';
     
-    const activeSystemPrompt = buildSystemPrompt(projectCards);
+    console.log(`Detecting chat category locally...`);
+    const detectedCategory = detectChatCategory(conversationText);
+    console.log(`Detected Category: ${detectedCategory}`);
+    
+    const activeSystemPrompt = buildSystemPrompt(projectCards, detectedCategory);
 
     console.log(`Analyzing chat using ${providerName} (${aiModel})...`);
 

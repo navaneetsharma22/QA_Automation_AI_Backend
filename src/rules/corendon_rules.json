@@ -17,149 +17,222 @@
     "Policy Violation",
     "Escalation Failure",
     "Incorrect Troubleshooting",
-    "Failure to Answer"
+    "Failure to Answer",
+    "Booking",
+    "Cancellation",
+    "Reschedule",
+    "Refund",
+    "Baggage",
+    "Meal / Seat",
+    "Random (Any Issue)",
+    "Other"
   ],
   "rules": [
     {
-      "id": "wrong_issue_identification",
-      "category": "Wrong Issue Identification",
-      "severity": "Major",
-      "description": "Agent answers a different issue than the customer's actual query.",
+      "id": "booking",
+      "category": "Booking",
+      "description": "\n3. Booking, Ticketing & Payments\n\n• Payment Verification Issues\n\nWe are seeing cases where money is deducted from a customer's account (sometimes twice) without a booking confirmation being generated. What is the exact workflow to verify the payment, issue the ticket, or process the refund?\n\n• Name Change Fees\n\nCustomers escalate when faced with a 300–400 Euro fee for a major name correction. How should we justify this charge to the customer, and are there any exception criteria we can apply?\n\n• Reschedule Fee Breakdowns\n\nWhen customers request a detailed breakdown of rescheduling charges, what information or system view should we use to explain the exact cost breakdown to them?\n\nResponse: Booking, Ticketing & Payments\n\n1. Payment Verification Issues\n\nQ: We are seeing cases where money is deducted from a customer's account (sometimes twice) without a booking confirmation being generated. What is the exact workflow to verify the payment, issue the ticket, or process the refund?\n\nGuideline:\n\n• L1 and L2 agents do not have access to verify payment status, duplicate transactions, ticket issuance, or refund processing.\n• Collect the following details from the customer:\no Booking reference (if available)\no Passenger name\no Travel date\no Payment date and amount\no Payment method\no Transaction ID/Authorization ID\no Proof of payment (bank statement or payment receipt), if available\n• Do not confirm that payment has been received or that a refund or ticket will be issued.\n• Escalate the case to L3 Support for verification with the Finance/Reservations Team.\n• L3 will verify whether:\no The payment was successfully received.\no A booking or ticket exists.\no A duplicate payment was processed.\no A ticket can be issued or a refund is applicable.\n• Document all relevant details in the CRM before escalating.\n\n",
       "detection_checks": [
         "Compare customer intent with agent response",
-        "Flag unrelated guidance",
-        "Ensure actual question is addressed"
-      ],
-      "examples": [
-        {
-          "customer": "Baggage allowance",
-          "agent": "Please complete online check-in",
-          "result": "Fail"
-        },
-        {
-          "customer": "Refund request",
-          "agent": "Explains baggage policy",
-          "result": "Fail"
-        }
+        "Verify against official policy"
       ]
     },
     {
-      "id": "identity_disclosure",
-      "category": "Identity Disclosure",
-      "severity": "Critical",
-      "rules": [
-        "Agent must always use assigned alias.",
-        "Never reveal real name.",
-        "Never sign with personal identity.",
-        "Never contradict displayed alias."
-      ],
-      "critical_triggers": [
-        "Real name disclosed",
-        "Personal identity revealed",
-        "Alias mismatch"
+      "id": "cancellation",
+      "category": "Cancellation",
+      "description": "1. Cancellation / Refund / Reschedule Requests\nExpected Agent Action:\nThe agent must first verify the actual booking source.\nIf the booking was made through a third-party travel agency, OTA, or booking partner, the agent must advise the customer to contact the respective booking partner directly for cancellation, refund, or rescheduling requests.\nIf the booking was made through the Corendon website or mobile application, the agent should guide the customer according to the applicable cancellation, refund, or rescheduling procedure.\nQC Failure Conditions:\nAgent provides cancellation/refund/reschedule assistance without verifying the booking source.\nAgent gives incorrect information regarding eligibility or process.\nAgent advises direct processing for third-party bookings.\nSeverity: Major\n\n",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
       ]
     },
     {
-      "id": "booking_source_verification",
-      "category": "Booking Source Verification",
-      "severity": "Critical",
-      "mandatory_for": [
-        "Cancellation",
-        "Refund",
-        "Reschedule"
-      ],
-      "required_questions": [
-        "Where was the ticket booked?",
-        "Official Corendon website?",
-        "Travel agency?",
-        "OTA / third-party partner?"
-      ],
-      "critical_if": "Booking source not verified before guidance."
-    },
-    {
-      "id": "visa",
-      "category": "Visa & Travel Documents",
-      "severity": "Critical",
-      "acceptable": [
-        "Provide only general guidance.",
-        "Refer customer to embassy, consulate or official government website.",
-        "Advise customer to verify before travel."
-      ],
-      "critical_if": [
-        "States visa required/not required without verification.",
-        "Guarantees entry or boarding eligibility.",
-        "Provides definitive immigration advice."
+      "id": "reschedule",
+      "category": "Reschedule",
+      "description": " \n3. Reschedule Fee Breakdowns\n\nQ: When customers request a detailed breakdown of rescheduling charges, what information should agents provide?\n\nGuideline:\n\n• L1 and L2 agents do not have access to the internal fare calculation or pricing engine used to determine rescheduling costs.\n• Do not estimate or manually calculate the fare difference or change fees.\n• If a customer requests a detailed breakdown of the rescheduling charges, collect the booking reference and details of the requested itinerary change.\n• Escalate the case to L3 Support for verification.\n• L3 will review the booking, verify the applicable fare rules, airline change fee, fare difference, taxes, and any additional service charges, and provide the official breakdown to the customer.\n• Record all customer requests and booking details in the CRM before escalating",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
       ]
     },
     {
-      "id": "meal",
-      "severity": "Informational",
-      "acceptable": "Availability-based guidance",
-      "critical": "Guarantees meal updated"
-    },
-    {
-      "id": "seat",
-      "category": "Seat Requests",
-      "severity": "Informational",
-      "acceptable": [
-        "Seat changes are subject to availability.",
-        "On-board seat changes may be possible if customer agrees and seats are available."
-      ],
-      "critical_if": [
-        "Agent guarantees a specific seat.",
-        "Agent confirms seat assignment without verification."
+      "id": "reschedule",
+      "category": "Reschedule",
+      "description": "Reschedule Fee Breakdowns\n\nQ: When customers request a detailed breakdown of rescheduling charges, what information should agents provide?\n\nGuideline:\n\n• L1 and L2 agents do not have access to the internal fare calculation or pricing engine used to determine rescheduling costs.\n• Do not estimate or manually calculate the fare difference or change fees.\n• If a customer requests a detailed breakdown of the rescheduling charges, collect the booking reference and details of the requested itinerary change.\n• Escalate the case to L3 Support for verification.\n• L3 will review the booking, verify the applicable fare rules, airline change fee, fare difference, taxes, and any additional service charges, and provide the official breakdown to the customer.\n• Record all customer requests and booking details in the CRM before escalating.\n\n",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
       ]
     },
     {
-      "id": "escalation",
-      "severity": "Critical",
-      "acceptable": "Troubleshoot then escalate",
-      "critical": "Required escalation not performed"
-    },
-    {
-      "id": "pnr_verification",
-      "category": "PNR / Booking Verification",
-      "severity": "Critical",
-      "rules": [
-        "Agents cannot verify PNR ownership or booking authenticity.",
-        "Escalate to Tier 3 for verification.",
-        "Do not mark resolved without verification."
-      ],
-      "critical_if": [
-        "Agent verifies booking without authorization.",
-        "Agent confirms passenger details without access."
+      "id": "refund",
+      "category": "Refund",
+      "description": "## QA Rule – Payment Verification Issues\n\n### Purpose\n\nEvaluate whether the support agent correctly handled payment verification, ticket issuance, and refund-related queries according to their access level and responsibilities.\n\n---\n\n### Agent Access Limitations\n\nL1 and L2 agents **do not have backend access** to:\n\n* Verify payment status.\n* Confirm duplicate transactions.\n* Verify ticket issuance.\n* Approve or confirm refunds.\n* Access Finance or Reservation backend systems.\n\nOnly **L3 Support (Development/Finance/Reservations Team)** is authorized to perform these verifications.\n\n---\n\n### Required Information Gathering\n\nBefore escalating, the agent should collect the following information whenever applicable:\n\n* Booking reference (if available)\n* Passenger full name\n* Travel date\n* Payment date\n* Payment amount\n* Payment method\n* Transaction ID / Authorization ID\n* Proof of payment (bank statement, payment receipt, or screenshot), if available\n\nFailure to gather essential information should be recorded as a QA observation.\n\n---\n\n### Correct Agent Behavior\n\nThe agent should:\n\n* Acknowledge the customer's concern.\n* Gather all relevant information.\n* Explain that payment, ticket, or refund verification requires backend validation.\n* Escalate the case when verification cannot be performed at their support level.\n* Record all relevant details in the CRM before escalation.\n\n---\n\n### Escalation Process\n\nThe expected escalation flow is:\n\n* **L1 Agent** → Escalate to **L2** if unable to resolve the issue.\n* **L2 Agent** → Escalate to **L3 Support** if backend verification is required or the issue remains unresolved.\n* **L3 Support (Development/Finance/Reservations Team)** is responsible for verifying:\n\n  * Payment receipt\n  * Booking existence\n  * Ticket issuance\n  * Duplicate transactions\n  * Refund eligibility\n\n---\n\n### Critical Errors\n\nMark as a **Critical Error** if the agent, without backend verification:\n\n* Confirms that payment has been received.\n* Confirms that payment failed.\n* Confirms that a duplicate payment occurred.\n* Confirms that a booking exists.\n* Confirms that a ticket has been issued.\n* Confirms that a refund has been approved.\n* Promises that a refund will be processed.\n* Provides a refund processing timeframe.\n* Gives any final resolution that requires backend verification.\n* Assures the customer that the issue has been resolved without verification.\n\nThese actions exceed the authority of L1 and L2 agents and must be treated as misleading commitments.\n\n---\n\n### QA Evaluation Criteria\n\nWhen reviewing the conversation, determine whether the agent:\n\n* Gathered all necessary information before responding.\n* Stayed within the permissions of their support level.\n* Avoided making unverified commitments.\n* Escalated the issue appropriately when unable to verify or resolve it.\n* Documented the case correctly before escalation.\n\n### QA Decision\n\nAn agent **passes** this QA check if they:\n\n* Follow the required troubleshooting process.\n* Collect the necessary customer information.\n* Avoid making unsupported commitments.\n* Escalate the issue according to the support hierarchy.\n\nAn agent **fails** this QA check if they:\n\n* Skip essential information gathering.\n* Provide unverified confirmations or promises.\n* Fail to escalate when required.\n* Resolve or close the issue without the necessary backend verification.\n",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
       ]
     },
     {
-      "id": "baggage_connecting",
-      "category": "Baggage Delay & Connecting Flights",
-      "severity": "Major",
-      "workflow": [
-        "Check if customer has connecting flight",
-        "Verify same airline or different airline",
-        "Same airline: baggage generally reaches final destination",
-        "Different airline: customer may need to collect and re-check baggage"
-      ],
-      "failures": [
-        "No verification of connection",
-        "Incorrect baggage transfer guidance"
+      "id": "refund",
+      "category": "Refund",
+      "description": "Expected Agent Action:\nThe agent must first verify the actual booking source.\nIf the booking was made through a third-party travel agency, OTA, or booking partner, the agent must advise the customer to contact the respective booking partner directly for cancellation, refund, or rescheduling requests.\nIf the booking was made through the Corendon website or mobile application, the agent should guide the customer according to the applicable cancellation, refund, or rescheduling procedure.\nQC Failure Conditions:\nAgent provides cancellation/refund/reschedule assistance without verifying the booking source.\nAgent gives incorrect information regarding eligibility or process.\nAgent advises direct processing for third-party bookings.\nSeverity: Major\n",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
       ]
     },
     {
-      "id": "cancellation_refund_reschedule",
-      "category": "Cancellation / Refund / Reschedule",
-      "severity": "Critical",
-      "workflow": [
-        "Verify booking source.",
-        "Determine Corendon vs third-party booking.",
-        "Follow applicable process.",
-        "Escalate Tier 2 if unresolved.",
-        "Escalate Tier 3 when further verification is required."
-      ],
-      "critical_if": [
-        "Booking source not verified.",
-        "No escalation when required.",
-        "Incorrect guidance for third-party bookings."
+      "id": "baggage",
+      "category": "Baggage",
+      "description": "• Missing Personal Items\n\nIf a customer leaves an item (e.g., laptop, jacket) on the plane and contacts Lost & Found, they are sometimes assured they will get it back, but no formal PIR or tracking number is created. How do we address and track these cases?\n\nResponse: Missing Personal Items (Left on Board)\n\nIf a customer reports that they have left a personal item (e.g., a laptop, mobile phone, jacket, passport, or other belongings) on board the aircraft, inform them that Corendon Airlines does not issue a Property Irregularity Report (PIR) or tracking number for personal items left on the aircraft, as a PIR is only applicable to checked baggage.\n\nAdvise the customer that their request will be handled through the Lost & Found process. If the item is located during the aircraft cleaning or handling process, the relevant airport's Lost & Found office or the responsible ground handling agent will contact the customer with further instructions for collection or shipment, where applicable.\n\nIf the customer states that they were assured they would receive the item back but have not received any update, advise them to follow up directly with the Lost & Found office at the arrival airport. Corendon Airlines is unable to provide a tracking number or live status updates for personal belongings left on board.\n\nAgents should document the case in the CRM by marking it as \"Personal Item Left on Board – Referred to Lost & Found\" and include the item description, flight number, travel date, arrival airport, and the customer's contact details in the case notes.",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "baggage",
+      "category": "Baggage",
+      "description": "• Missing Personal Items\n\nIf a customer leaves an item (e.g., laptop, jacket) on the plane and contacts Lost & Found, they are sometimes assured they will get it back, but no formal PIR or tracking number is created. How do we address and track these cases?\n\nResponse: Missing Personal Items (Left on Board)\n\nIf a customer reports that they have left a personal item (e.g., a laptop, mobile phone, jacket, passport, or other belongings) on board the aircraft, inform them that Corendon Airlines does not issue a Property Irregularity Report (PIR) or tracking number for personal items left on the aircraft, as a PIR is only applicable to checked baggage.\n\nAdvise the customer that their request will be handled through the Lost & Found process. If the item is located during the aircraft cleaning or handling process, the relevant airport's Lost & Found office or the responsible ground handling agent will contact the customer with further instructions for collection or shipment, where applicable.\n\nIf the customer states that they were assured they would receive the item back but have not received any update, advise them to follow up directly with the Lost & Found office at the arrival airport. Corendon Airlines is unable to provide a tracking number or live status updates for personal belongings left on board.\n\nAgents should document the case in the CRM by marking it as \"Personal Item Left on Board – Referred to Lost & Found\" and include the item description, flight number, travel date, arrival airport, and the customer's contact details in the case notes.",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "reschedule",
+      "category": "Reschedule",
+      "description": "2. Flight Disruptions & Compensation (IRROPS)\n\n• Delay Verification\n\nCustomers frequently escalate when we cannot verify the exact length and reason for a flight delay. What internal tool or process should we use to accurately verify delay reasons and durations?\n\nResponse:\n\n1. Delay Verification\n\nQ: Customers frequently escalate when we cannot verify the exact length and reason for a flight delay. What internal tool or process should we use to accurately verify delay reasons and durations?\n\nGuideline:\n\n• L1 and L2 agents do not have access to operational systems to verify the exact flight delay duration or the official reason for the disruption.\n• Do not speculate or communicate unverified information to the customer.\n• Escalate the case to L3 Support for verification with the Operations Team/OCC.\n• L3 will verify the official delay duration and reason and provide the appropriate response to the customer.\n• Record all customer details, flight number, travel date, and the specific information requested before escalating.\n\n",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "reschedule",
+      "category": "Reschedule",
+      "description": " \n2. Missed Connections\n\nQ: How should we handle customers who miss a Corendon flight because their previous (separate or connected) flight was delayed?\n\nGuideline:\n\n• L1 and L2 agents should not determine liability or eligibility for rebooking or compensation.\n• Collect the booking reference(s), flight details, and customer explanation.\n• Escalate the case to L3 Support for verification of the booking type (separate booking or protected connection) and applicable airline policy.\n• L3 will review the itinerary and provide the final resolution based on Corendon Airlines' procedures.\n",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "reschedule",
+      "category": "Reschedule",
+      "description": " \n3. EU261 & Hotel Accommodation\n\nQ: Customers frequently cite EU261 laws to demand hotel stays and compensation. What are the specific guidelines and approval flows for granting or denying hotel accommodations and compensation?\n\nGuideline:\n\n• L1 and L2 agents are not authorized to approve or deny hotel accommodation, reimbursement, or EU261 compensation.\n• Do not promise eligibility, compensation amounts, or reimbursement.\n• If the customer requests hotel accommodation, expense reimbursement, or compensation, escalate the case to L3 Support for review.\n• L3 will verify the operational circumstances, determine eligibility under Corendon Airlines' policy and applicable passenger rights regulations, and provide the final response or guide the customer through the official claim process.\n\n \n4. Tarmac Delays\n\nQ: When a flight is stuck on the tarmac, customers often contact us stating that ground or cabin crews are not providing updates. How should we handle these live escalations and provide accurate departure estimates?\n\nGuideline:\n\n• L1 and L2 agents do not have access to live operational updates or estimated departure times.\n• Do not provide estimated departure times or operational information unless officially confirmed.\n• Escalate the case to L3 Support for verification with the Operations Team, where applicable.\n• If no official information is available, advise the customer that the flight crew and airport operations will make announcements as soon as confirmed information becomes available.\n• Document the interaction in the CRM before escalating the case.\n\n",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "reschedule",
+      "category": "Reschedule",
+      "description": " \n3. EU261 & Hotel Accommodation\n\nQ: Customers frequently cite EU261 laws to demand hotel stays and compensation. What are the specific guidelines and approval flows for granting or denying hotel accommodations and compensation?\n\nGuideline:\n\n• L1 and L2 agents are not authorized to approve or deny hotel accommodation, reimbursement, or EU261 compensation.\n• Do not promise eligibility, compensation amounts, or reimbursement.\n• If the customer requests hotel accommodation, expense reimbursement, or compensation, escalate the case to L3 Support for review.\n• L3 will verify the operational circumstances, determine eligibility under Corendon Airlines' policy and applicable passenger rights regulations, and provide the final response or guide the customer through the official claim process.\n\n \n4. Tarmac Delays\n\nQ: When a flight is stuck on the tarmac, customers often contact us stating that ground or cabin crews are not providing updates. How should we handle these live escalations and provide accurate departure estimates?\n\nGuideline:\n\n• L1 and L2 agents do not have access to live operational updates or estimated departure times.\n• Do not provide estimated departure times or operational information unless officially confirmed.\n• Escalate the case to L3 Support for verification with the Operations Team, where applicable.\n• If no official information is available, advise the customer that the flight crew and airport operations will make announcements as soon as confirmed information becomes available.\n• Document the interaction in the CRM before escalating the case.\n\n",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "reschedule",
+      "category": "Reschedule",
+      "description": " \n3. Reschedule Fee Breakdowns\n\nQ: When customers request a detailed breakdown of rescheduling charges, what information should agents provide?\n\nGuideline:\n\n• L1 and L2 agents do not have access to the internal fare calculation or pricing engine used to determine rescheduling costs.\n• Do not estimate or manually calculate the fare difference or change fees.\n• If a customer requests a detailed breakdown of the rescheduling charges, collect the booking reference and details of the requested itinerary change.\n• Escalate the case to L3 Support for verification.\n• L3 will review the booking, verify the applicable fare rules, airline change fee, fare difference, taxes, and any additional service charges, and provide the official breakdown to the customer.\n• Record all customer requests and booking details in the CRM before escalating",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "booking",
+      "category": "Booking",
+      "description": " \n2. Name Change Fees\n\nQ: Customers escalate when faced with a high fee for a major name correction. How should we justify this charge, and are there any exception criteria?\n\nGuideline:\n\n• L1 and L2 agents should explain that name correction or name change fees are determined according to Corendon Airlines' fare conditions and ticket rules.\n• Do not negotiate, waive, or promise any reduction in the applicable fee.\n• If the customer claims the correction is due to a booking error, legal name change, or another exceptional circumstance, collect all supporting documents (where applicable) and escalate the case to L3 Support.\n• L3 will verify whether the request qualifies for an exception under Corendon Airlines' policy and communicate the final decision.\n• Ensure all supporting documents and customer comments are attached to the CRM case before escalation.",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "meal_/_seat",
+      "category": "Meal / Seat",
+      "description": "1. Severe Allergies\n\nQ: What is the protocol for handling sensitive escalations where a customer was served food they are allergic to or suffered an allergic reaction onboard?\n\nGuideline:\n\n• Treat all allergy-related complaints as high-priority safety incidents.\n• L1 and L2 agents should express empathy and collect all relevant details, including:\no Booking reference\no Flight number and travel date\no Description of the allergy\no Food or beverage consumed\no Symptoms experienced\no Whether medical assistance was provided onboard or after landing\no Any supporting medical documents (if available)\n• Do not determine liability, admit fault, or promise compensation.\n• Escalate the case immediately to L3 Support for review with the In-Flight Services/Safety Team.\n• L3 will verify the incident, coordinate with the relevant operational departments, and provide the official response regarding the complaint and any applicable resolution.\n• Document all information in the CRM before escalating.\n",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "meal_/_seat",
+      "category": "Meal / Seat",
+      "description": "2. Pre-Ordered Meal Discrepancies\n\nQ: Customers present a pre-order meal confirmation, but the cabin crew advised that no meal request was available. How should this be handled?\n\nGuideline:\n\n• L1 and L2 agents should request:\no Booking reference\no Flight number and travel date\no Copy of the meal confirmation or payment receipt\no Type of meal ordered\n• Do not confirm whether the meal request was correctly processed or whether compensation will be provided.\n• As L1 and L2 agents do not have access to verify meal synchronization between the reservation system and onboard catering, the case must be escalated to L3 Support.\n• L3 will verify whether the meal was successfully added to the booking, transmitted to the catering provider, or affected by a system synchronization issue.\n• If applicable, L3 will determine whether reimbursement or any goodwill compensation is appropriate according to Corendon Airlines' policy.\n• Record all supporting documents and customer comments in the CRM before escalating.",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "meal_/_seat",
+      "category": "Meal / Seat",
+      "description": " \n3. Onboard Wi-Fi\n\nQ: We need clear documentation on how the Corendon Wi-Fi facility works, including purchasing, troubleshooting, and refunding failed connections.\n\nGuideline:\n\n• L1 and L2 agents should first determine:\no Flight number and travel date\no Whether the aircraft was equipped with Wi-Fi\no Whether the customer purchased the Wi-Fi service onboard or in advance\no The nature of the issue (unable to connect, slow connection, interrupted service, payment issue, etc.)\no Any proof of purchase or payment receipt\n• Provide only basic troubleshooting, such as:\no Ensuring the device is in Flight Mode with Wi-Fi enabled.\no Confirming the customer connected to the aircraft's Wi-Fi network.\no Advising the customer to reconnect or restart the device if appropriate.\n• L1 and L2 agents do not have access to verify Wi-Fi service availability, technical failures, or refund eligibility.\n• If the issue cannot be resolved or the customer requests a refund, escalate the case to L3 Support.\n• L3 will verify the Wi-Fi service logs, confirm whether a service disruption occurred, determine refund eligibility according to Corendon Airlines' policy, and provide the final response.\n• Ensure all customer details, proof of purchase, and issue description are documented in the CRM before escalating.",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "random_(any_issue)",
+      "category": "Random (Any Issue)",
+      "description": "5. Loyalty & Airport Operations\n\n• Miles & Loyalty Programs\n\nOur team has not received training on Corendon's Miles, Promo Codes, or Loyalty Program. Handling these queries currently leads to immediate escalations. Can you provide training materials or an SOP for loyalty-related issues?\n\n• Boarding Pass Scanning Errors\n\nWhen a boarding pass fails to scan at the gate, ground staff sometimes refuse to help and direct the customer to call us. What action can we take remotely to resolve a live gate-scanning issue?\n\nResponse: Membership, Loyalty Program & Promo Codes\n\nQ: Our team has not received training on Corendon's Membership, Promo Codes, or Loyalty Program. Handling these queries currently leads to immediate escalations. Can you provide an SOP?\n\nGuideline:\n\n• L1 and L2 agents must first verify the original booking source, as promotional codes, loyalty benefits, or discounts may vary depending on where the booking was made.\n• Confirm whether the booking was made:\no Directly through Corendon Airlines (website, mobile app, or Customer Service).\no Through a travel agency, tour operator, OTA (Online Travel Agency), or any third-party vendor.\n• Some third-party agencies and travel partners operate their own loyalty programs, promotional campaigns, voucher codes, or reward schemes, which are independent of Corendon Airlines. These offers cannot be verified or managed by L1/L2 Customer Support.\n• If the promotion, voucher, or loyalty benefit was issued by a third-party booking partner, advise the customer to contact the respective booking provider, as they are responsible for validating and administering their own promotional offers.\n• If the booking was made directly with Corendon Airlines and the issue relates to a Corendon promotional campaign, membership account, or promo code, collect:\no Booking reference\no Registered email address\no Promo code (if applicable)\no Screenshot of the error or promotion\no Description of the issue\n• L1 and L2 agents do not have access to verify:\no Membership account status\no Promo code eligibility\no Campaign participation\no Discount application failures\n• Do not manually apply promo codes, override discounts, or promise exceptions.\n• Escalate eligible Corendon-related cases to L3 Support for verification. L3 will confirm the booking source, campaign eligibility, account status, and provide the appropriate resolution.\n• Ensure all customer information and supporting documents are recorded in the CRM before escalating.\n\n \nImportant Guidelines for L1/L2 Agents Before Escalation\n\nMandatory Information Gathering\n\nBefore escalating any case to L3 Support, L1 and L2 agents must clearly understand the customer's actual issue and collect all relevant information required for investigation. The quality of the escalation depends on the accuracy and completeness of the information provided.\n\nAgent Responsibilities\n\n• Understand the customer's concern before initiating an escalation.\n• Ask only relevant and case-specific questions required to investigate the issue.\n• Verify all available details within the scope of L1/L2 support.\n• Collect all mandatory information (e.g., booking reference, passenger name, flight number, travel date, etc...) based on the issue type.\n• Information a clear summary of the customer's concern and all collected information in the CRM before escalating the case.\n\nCritical Compliance",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "other",
+      "category": "Other",
+      "description": "5. Loyalty & Airport Operations\n\n• Miles & Loyalty Programs\n\nOur team has not received training on Corendon's Miles, Promo Codes, or Loyalty Program. Handling these queries currently leads to immediate escalations. Can you provide training materials or an SOP for loyalty-related issues?\n\n• Boarding Pass Scanning Errors\n\nWhen a boarding pass fails to scan at the gate, ground staff sometimes refuse to help and direct the customer to call us. What action can we take remotely to resolve a live gate-scanning issue?\n\nResponse: Membership, Loyalty Program & Promo Codes\n\nQ: Our team has not received training on Corendon's Membership, Promo Codes, or Loyalty Program. Handling these queries currently leads to immediate escalations. Can you provide an SOP?\n\nGuideline:\n\n• L1 and L2 agents must first verify the original booking source, as promotional codes, loyalty benefits, or discounts may vary depending on where the booking was made.\n• Confirm whether the booking was made:\no Directly through Corendon Airlines (website, mobile app, or Customer Service).\no Through a travel agency, tour operator, OTA (Online Travel Agency), or any third-party vendor.\n• Some third-party agencies and travel partners operate their own loyalty programs, promotional campaigns, voucher codes, or reward schemes, which are independent of Corendon Airlines. These offers cannot be verified or managed by L1/L2 Customer Support.\n• If the promotion, voucher, or loyalty benefit was issued by a third-party booking partner, advise the customer to contact the respective booking provider, as they are responsible for validating and administering their own promotional offers.\n• If the booking was made directly with Corendon Airlines and the issue relates to a Corendon promotional campaign, membership account, or promo code, collect:\no Booking reference\no Registered email address\no Promo code (if applicable)\no Screenshot of the error or promotion\no Description of the issue\n• L1 and L2 agents do not have access to verify:\no Membership account status\no Promo code eligibility\no Campaign participation\no Discount application failures\n• Do not manually apply promo codes, override discounts, or promise exceptions.\n• Escalate eligible Corendon-related cases to L3 Support for verification. L3 will confirm the booking source, campaign eligibility, account status, and provide the appropriate resolution.\n• Ensure all customer information and supporting documents are recorded in the CRM before escalating.\n\n \nImportant Guidelines for L1/L2 Agents Before Escalation\n\nMandatory Information Gathering\n\nBefore escalating any case to L3 Support, L1 and L2 agents must clearly understand the customer's actual issue and collect all relevant information required for investigation. The quality of the escalation depends on the accuracy and completeness of the information provided.\n\nAgent Responsibilities\n\n• Understand the customer's concern before initiating an escalation.\n• Ask only relevant and case-specific questions required to investigate the issue.\n• Verify all available details within the scope of L1/L2 support.\n• Collect all mandatory information (e.g., booking reference, passenger name, flight number, travel date, etc...) based on the issue type.\n• Information a clear summary of the customer's concern and all collected information in the CRM before escalating the case.\n\nCritical Compliance\n\n• Agents must not ask customers for unnecessary or irrelevant information.\n• If an L1/L2 agent requests information that is not required for handling or investigating the reported issue, the interaction should be marked as a Critical Error during QA evaluation.\n• Asking irrelevant questions increases customer effort, delays resolution, and negatively impacts the customer experience.\n\nEscalation Standard\n\nA case should be escalated to L3 only after:\n\nThe actual issue has been clearly identified.\nAll mandatory information has been collected.\nRelevant supporting information have been obtained (where applicable).\nThe CRM notes contain a complete and accurate summary of the issue.\nThe agent has confirmed that the request cannot be resolved within the scope of L1/L2 responsibilities.\nNote: Incomplete escalations or escalations with missing mandatory information may be returned by L3 for additional details, resulting in unnecessary delays in resolution.",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "meal_/_seat",
+      "category": "Meal / Seat",
+      "description": "5. Loyalty & Airport Operations\n\n• Miles & Loyalty Programs\n\nOur team has not received training on Corendon's Miles, Promo Codes, or Loyalty Program. Handling these queries currently leads to immediate escalations. Can you provide training materials or an SOP for loyalty-related issues?\n\n• Boarding Pass Scanning Errors\n\nWhen a boarding pass fails to scan at the gate, ground staff sometimes refuse to help and direct the customer to call us. What action can we take remotely to resolve a live gate-scanning issue?\n\nResponse: Membership, Loyalty Program & Promo Codes\n\nQ: Our team has not received training on Corendon's Membership, Promo Codes, or Loyalty Program. Handling these queries currently leads to immediate escalations. Can you provide an SOP?\n\nGuideline:\n\n• L1 and L2 agents must first verify the original booking source, as promotional codes, loyalty benefits, or discounts may vary depending on where the booking was made.\n• Confirm whether the booking was made:\no Directly through Corendon Airlines (website, mobile app, or Customer Service).\no Through a travel agency, tour operator, OTA (Online Travel Agency), or any third-party vendor.\n• Some third-party agencies and travel partners operate their own loyalty programs, promotional campaigns, voucher codes, or reward schemes, which are independent of Corendon Airlines. These offers cannot be verified or managed by L1/L2 Customer Support.\n• If the promotion, voucher, or loyalty benefit was issued by a third-party booking partner, advise the customer to contact the respective booking provider, as they are responsible for validating and administering their own promotional offers.\n• If the booking was made directly with Corendon Airlines and the issue relates to a Corendon promotional campaign, membership account, or promo code, collect:\no Booking reference\no Registered email address\no Promo code (if applicable)\no Screenshot of the error or promotion\no Description of the issue\n• L1 and L2 agents do not have access to verify:\no Membership account status\no Promo code eligibility\no Campaign participation\no Discount application failures\n• Do not manually apply promo codes, override discounts, or promise exceptions.\n• Escalate eligible Corendon-related cases to L3 Support for verification. L3 will confirm the booking source, campaign eligibility, account status, and provide the appropriate resolution.\n• Ensure all customer information and supporting documents are recorded in the CRM before escalating.\n\n \nImportant Guidelines for L1/L2 Agents Before Escalation\n\nMandatory Information Gathering\n\nBefore escalating any case to L3 Support, L1 and L2 agents must clearly understand the customer's actual issue and collect all relevant information required for investigation. The quality of the escalation depends on the accuracy and completeness of the information provided.\n\nAgent Responsibilities\n\n• Understand the customer's concern before initiating an escalation.\n• Ask only relevant and case-specific questions required to investigate the issue.\n• Verify all available details within the scope of L1/L2 support.\n• Collect all mandatory information (e.g., booking reference, passenger name, flight number, travel date, etc...) based on the issue type.\n• Information a clear summary of the customer's concern and all collected information in the CRM before escalating the case.\n\nCritical Compliance\n\n• Agents must not ask customers for unnecessary or irrelevant information.\n• If an L1/L2 agent requests information that is not required for handling or investigating the reported issue, the interaction should be marked as a Critical Error during QA evaluation.\n• Asking irrelevant questions increases customer effort, delays resolution, and negatively impacts the customer experience.\n\nEscalation Standard\n\nA case should be escalated to L3 only after:\n\nThe actual issue has been clearly identified.\nAll mandatory information has been collected.\nRelevant supporting information have been obtained (where applicable).\nThe CRM notes contain a complete and accurate summary of the issue.\nThe agent has confirmed that the request cannot be resolved within the scope of L1/L2 responsibilities.\nNote: Incomplete escalations or escalations with missing mandatory information may be returned by L3 for additional details, resulting in unnecessary delays in resolution.",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "other",
+      "category": "Other",
+      "description": "• Onboard Wi-Fi\n\nWe need clear documentation on how the Corendon Wi-Fi facility works, including purchasing, troubleshooting, and refunding failed connections.\n\nResponse: In-Flight Services & Experience\n\n1. Severe Allergies\n\nQ: What is the protocol for handling sensitive escalations where a customer was served food they are allergic to or suffered an allergic reaction onboard?\n\nGuideline:\n\n• Treat all allergy-related complaints as high-priority safety incidents.\n• L1 and L2 agents should express empathy and collect all relevant details, including:\no Booking reference\no Flight number and travel date\no Description of the allergy\no Food or beverage consumed\no Symptoms experienced\no Whether medical assistance was provided onboard or after landing\no Any supporting medical documents (if available)\n• Do not determine liability, admit fault, or promise compensation.\n• Escalate the case immediately to L3 Support for review with the In-Flight Services/Safety Team.\n• L3 will verify the incident, coordinate with the relevant operational departments, and provide the official response regarding the complaint and any applicable resolution.\n• Document all information in the CRM before escalating.",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "booking",
+      "category": "Booking",
+      "description": "3. PNR / Booking Verification Requests\nExpected Agent Action:\nAgents do not have access to verify PNRs, booking ownership, passenger details, or booking authenticity.\nAll PNR and booking verification requests must be escalated to Tier 3 Support for further verification.\nThe agent should clearly inform the customer that the request has been escalated for verification.\nQC Failure Conditions:\nAgent attempts to verify a booking without authorized access.\nAgent marks the issue as resolved without Tier 3 verification.\nAgent provides booking-related confirmation without validation.\nSeverity: Critical / Misleading Information\nCritical Error Definition:\nAny case where an agent resolves a PNR or booking verification request without proper Tier 3 escalation and verification will be marked as a Critical Error (Misleading Information) and may result in immediate QA failure for the interaction.\nSend to all QC members",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
+      ]
+    },
+    {
+      "id": "booking",
+      "category": "Booking",
+      "description": "5. Loyalty & Airport Operations\n\n• Miles & Loyalty Programs\n\nOur team has not received training on Corendon's Miles, Promo Codes, or Loyalty Program. Handling these queries currently leads to immediate escalations. Can you provide training materials or an SOP for loyalty-related issues?\n\n• Boarding Pass Scanning Errors\n\nWhen a boarding pass fails to scan at the gate, ground staff sometimes refuse to help and direct the customer to call us. What action can we take remotely to resolve a live gate-scanning issue?\n\nResponse: Membership, Loyalty Program & Promo Codes\n\nQ: Our team has not received training on Corendon's Membership, Promo Codes, or Loyalty Program. Handling these queries currently leads to immediate escalations. Can you provide an SOP?\n\nGuideline:\n\n• L1 and L2 agents must first verify the original booking source, as promotional codes, loyalty benefits, or discounts may vary depending on where the booking was made.\n• Confirm whether the booking was made:\no Directly through Corendon Airlines (website, mobile app, or Customer Service).\no Through a travel agency, tour operator, OTA (Online Travel Agency), or any third-party vendor.\n• Some third-party agencies and travel partners operate their own loyalty programs, promotional campaigns, voucher codes, or reward schemes, which are independent of Corendon Airlines. These offers cannot be verified or managed by L1/L2 Customer Support.\n• If the promotion, voucher, or loyalty benefit was issued by a third-party booking partner, advise the customer to contact the respective booking provider, as they are responsible for validating and administering their own promotional offers.\n• If the booking was made directly with Corendon Airlines and the issue relates to a Corendon promotional campaign, membership account, or promo code, collect:\no Booking reference\no Registered email address\no Promo code (if applicable)\no Screenshot of the error or promotion\no Description of the issue\n• L1 and L2 agents do not have access to verify:\no Membership account status\no Promo code eligibility\no Campaign participation\no Discount application failures\n• Do not manually apply promo codes, override discounts, or promise exceptions.\n• Escalate eligible Corendon-related cases to L3 Support for verification. L3 will confirm the booking source, campaign eligibility, account status, and provide the appropriate resolution.\n• Ensure all customer information and supporting documents are recorded in the CRM before escalating.\n\n \nImportant Guidelines for L1/L2 Agents Before Escalation\n\nMandatory Information Gathering\n\nBefore escalating any case to L3 Support, L1 and L2 agents must clearly understand the customer's actual issue and collect all relevant information required for investigation. The quality of the escalation depends on the accuracy and completeness of the information provided.\n\nAgent Responsibilities\n\n• Understand the customer's concern before initiating an escalation.\n• Ask only relevant and case-specific questions required to investigate the issue.\n• Verify all available details within the scope of L1/L2 support.\n• Collect all mandatory information (e.g., booking reference, passenger name, flight number, travel date, etc...) based on the issue type.\n• Information a clear summary of the customer's concern and all collected information in the CRM before escalating the case.\n\nCritical Compliance\n\n• Agents must not ask customers for unnecessary or irrelevant information.\n• If an L1/L2 agent requests information that is not required for handling or investigating the reported issue, the interaction should be marked as a Critical Error during QA evaluation.\n• Asking irrelevant questions increases customer effort, delays resolution, and negatively impacts the customer experience.\n\nEscalation Standard\n\nA case should be escalated to L3 only after:\n\nThe actual issue has been clearly identified.\nAll mandatory information has been collected.\nRelevant supporting information have been obtained (where applicable).\nThe CRM notes contain a complete and accurate summary of the issue.\nThe agent has confirmed that the request cannot be resolved within the scope of L1/L2 responsibilities.\nNote: Incomplete escalations or escalations with missing mandatory information may be returned by L3 for additional details, resulting in unnecessary delays in resolution.",
+      "detection_checks": [
+        "Compare customer intent with agent response",
+        "Verify against official policy"
       ]
     }
   ]
