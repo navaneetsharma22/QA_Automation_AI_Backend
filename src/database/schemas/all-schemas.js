@@ -163,6 +163,13 @@ const ProjectSchema = new mongoose.Schema({
   updatedAt: { type: Date, default: Date.now }
 });
 
+// 12. QC Submission Schema
+const QcSubmissionSchema = new mongoose.Schema({
+  petitionId: { type: String, required: true, unique: true, index: true },
+  submittedAt: { type: Date, default: Date.now },
+  submittedBy: { type: String }
+});
+
 module.exports = {
   Project: mongoose.models.Project || mongoose.model('Project', ProjectSchema),
   User: mongoose.models.User || mongoose.model('User', UserSchema),
@@ -174,5 +181,6 @@ module.exports = {
   Report: mongoose.models.Report || mongoose.model('Report', ReportSchema),
   DashboardStatistics: mongoose.models.DashboardStatistics || mongoose.model('DashboardStatistics', DashboardStatisticsSchema),
   Log: mongoose.models.Log || mongoose.model('Log', LogSchema),
-  Settings: mongoose.models.Settings || mongoose.model('Settings', SettingsSchema)
+  Settings: mongoose.models.Settings || mongoose.model('Settings', SettingsSchema),
+  QcSubmission: mongoose.models.QcSubmission || mongoose.model('QcSubmission', QcSubmissionSchema)
 };

@@ -1,5 +1,6 @@
 const axios = require('axios');
 const { winstonLogger } = require('../config/logger/winston.config');
+const { QcSubmission } = require('../database/schemas/all-schemas');
 
 exports.postToQC = async (req, res) => {
   try {
@@ -16,8 +17,26 @@ exports.postToQC = async (req, res) => {
 
     console.log(`[QC] Forwarding report to QC Platform: ${qcApiUrl}`);
 
+    const validQcTypes = ['ART', 'AHT', 'CRITICAL', 'MISLEADING', 'GRAMETICAL', 'WRONG IDENTIFICATION', 'Escalation Delay', 'In Progress'];
+    let finalErrorType = reportData.errorType;
+    if (!validQcTypes.includes(finalErrorType)) {
+      // Map common fallback severities
+      if (['CRITICAL', 'HIGH'].includes(finalErrorType?.toUpperCase())) finalErrorType = 'CRITICAL';
+      else finalErrorType = 'In Progress'; // safe fallback
+    }
+
+    const payload = {
+      entry: {
+        petitionNumber: reportData.petitionId || reportData.analysisId || 'UNKNOWN',
+        errorType: finalErrorType,
+        observation: reportData.observation || reportData.reason || reportData.qaFinding || reportData.overallRecommendation || 'Automated QA Analysis.',
+        agentName: reportData.agentName || 'System',
+        rawReport: reportData
+      }
+    };
+
     // Send the report to the QC Platform
-    const response = await axios.post(qcApiUrl, reportData, {
+    const response = await axios.post(qcApiUrl, payload, {
       headers: {
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${qcToken}`
@@ -25,6 +44,21 @@ exports.postToQC = async (req, res) => {
     });
 
     console.log(`[QC] Successfully posted to QC platform. Status: ${response.status}`);
+    
+    try {
+      await QcSubmission.findOneAndUpdate(
+        { petitionId: payload.entry.petitionNumber },
+        { 
+          $set: { 
+            submittedAt: new Date(),
+            submittedBy: payload.entry.agentName 
+          } 
+        },
+        { upsert: true, new: true }
+      );
+    } catch (dbErr) {
+      console.log('[QC] Failed to log submission locally:', dbErr.message);
+    }
     
     res.status(200).json({ 
       success: true, 
