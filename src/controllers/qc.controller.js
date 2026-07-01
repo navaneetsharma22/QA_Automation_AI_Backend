@@ -6,7 +6,7 @@ exports.postToQC = async (req, res) => {
   try {
     const reportData = req.body;
     const qcApiUrl = process.env.QC_API_URL;
-    const qcToken = process.env.QC_ACCESS_TOKEN;
+    const qcToken = req.headers['x-qc-token'] || process.env.QC_ACCESS_TOKEN;
 
     if (!qcApiUrl || qcApiUrl === 'https://your-qc-platform.com/api/v1/reports') {
       return res.status(400).json({ 

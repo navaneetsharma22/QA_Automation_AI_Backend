@@ -84,7 +84,7 @@ exports.getChats = async (req, res) => {
     const limit = parseInt(req.query.limit) || 10;
     const requestedDate = req.query.date;
     
-    const token = process.env.CRM_ACCESS_TOKEN;
+    const token = req.headers['x-crm-token'] || process.env.CRM_ACCESS_TOKEN;
     const baseUrl = process.env.CRM_API_URL;
     
     console.log(`[DEBUG] CRM Route Hit! Page: ${page}, Date: ${requestedDate || 'None'}`);
@@ -176,7 +176,7 @@ exports.getChats = async (req, res) => {
 exports.getChatTranscript = async (req, res) => {
   try {
     const { id } = req.params;
-    const token = process.env.CRM_ACCESS_TOKEN;
+    const token = req.headers['x-crm-token'] || process.env.CRM_ACCESS_TOKEN;
     const baseUrl = process.env.CRM_API_URL;
     
     if (!token || token === 'your_access_token_here' || !baseUrl) {

@@ -8,11 +8,11 @@ const path = require('path');
 const { Project, ChatAnalysis } = require('../database/schemas/all-schemas');
 
 // Initialize SDKs lazily to handle missing keys gracefully
-const getGroqClient = () => new Groq({ apiKey: process.env.GROQ_API_KEY });
-const getGeminiClient = () => new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const getOpenAiClient = () => new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const getAnthropicClient = () => new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-const getCohereClient = () => new CohereClient({ token: process.env.COHERE_API_KEY || 'no-key' });
+const getGroqClient = (customKey) => new Groq({ apiKey: customKey || process.env.GROQ_API_KEY });
+const getGeminiClient = (customKey) => new GoogleGenerativeAI(customKey || process.env.GEMINI_API_KEY);
+const getOpenAiClient = (customKey) => new OpenAI({ apiKey: customKey || process.env.OPENAI_API_KEY });
+const getAnthropicClient = (customKey) => new Anthropic({ apiKey: customKey || process.env.ANTHROPIC_API_KEY });
+const getCohereClient = (customKey) => new CohereClient({ token: customKey || process.env.COHERE_API_KEY || 'no-key' });
 
 // Build the base system prompt dynamically based on the Corendon Airlines instructions
 const buildSystemPrompt = (projectCards, detectedCategory = null, restrictionLevel = 0) => {
@@ -535,8 +535,24 @@ exports.analyzeChat = async (req, res) => {
 
     console.log(`Analyzing chat using ${providerName} (${aiModel})...`);
 
+    const usePersonalKeys = req.headers['x-use-personal-keys'] === 'true';
+    let customKey = undefined;
+    
+    if (usePersonalKeys) {
+      if (providerName.includes('GROQ')) customKey = req.headers['x-groq-key'];
+      else if (providerName.includes('GEMINI') || providerName.includes('GOOGLE')) customKey = req.headers['x-gemini-key'];
+      else if (providerName.includes('OPENAI')) customKey = req.headers['x-openai-key'];
+      else if (providerName.includes('ANTHROPIC')) customKey = req.headers['x-anthropic-key'];
+      else if (providerName.includes('COHERE')) customKey = req.headers['x-cohere-key'];
+      else if (providerName.includes('DEEPSEEK')) customKey = req.headers['x-deepseek-key'];
+      else if (providerName.includes('OPENROUTER')) customKey = req.headers['x-openrouter-key'];
+      else if (providerName.includes('HUGGING')) customKey = req.headers['x-huggingface-key'];
+      else if (providerName.includes('CEREBRAS')) customKey = req.headers['x-cerebras-key'];
+      else if (providerName.includes('GITHUB')) customKey = req.headers['x-github-key'];
+    }
+
     if (providerName.includes('GROQ')) {
-      const groq = getGroqClient();
+      const groq = getGroqClient(customKey);
       const completion = await groq.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
@@ -549,7 +565,7 @@ exports.analyzeChat = async (req, res) => {
       rawResponse = completion.choices[0].message.content;
     } 
     else if (providerName.includes('GEMINI') || providerName.includes('GOOGLE')) {
-      const genAI = getGeminiClient();
+      const genAI = getGeminiClient(customKey);
       const model = genAI.getGenerativeModel({ 
         model: aiModel || 'gemini-2.5-flash',
         generationConfig: { responseMimeType: 'application/json' }
@@ -558,7 +574,7 @@ exports.analyzeChat = async (req, res) => {
       rawResponse = result.response.text();
     }
     else if (providerName.includes('OPENAI')) {
-      const openai = getOpenAiClient();
+      const openai = getOpenAiClient(customKey);
       const completion = await openai.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
@@ -571,7 +587,7 @@ exports.analyzeChat = async (req, res) => {
       rawResponse = completion.choices[0].message.content;
     }
     else if (providerName.includes('ANTHROPIC')) {
-      const anthropic = getAnthropicClient();
+      const anthropic = getAnthropicClient(customKey);
       const completion = await anthropic.messages.create({
         model: aiModel || 'claude-3-5-sonnet-20241022',
         max_tokens: 1500,
@@ -583,7 +599,7 @@ exports.analyzeChat = async (req, res) => {
     }
     else if (providerName.includes('DEEPSEEK')) {
       const deepseek = new OpenAI({ 
-        apiKey: process.env.DEEPSEEK_API_KEY || 'no-key',
+        apiKey: customKey || process.env.DEEPSEEK_API_KEY || 'no-key',
         baseURL: 'https://api.deepseek.com/v1' 
       });
       const completion = await deepseek.chat.completions.create({
@@ -615,7 +631,7 @@ exports.analyzeChat = async (req, res) => {
     }
     else if (providerName.includes('OPENROUTER')) {
       const openrouter = new OpenAI({
-        apiKey: process.env.OPENROUTER_API_KEY || 'no-key',
+        apiKey: customKey || process.env.OPENROUTER_API_KEY || 'no-key',
         baseURL: 'https://openrouter.ai/api/v1',
         defaultHeaders: {
           "HTTP-Referer": process.env.CLIENT_URL || "http://localhost:5173",
@@ -636,7 +652,7 @@ exports.analyzeChat = async (req, res) => {
     }
     else if (providerName.includes('HUGGING')) {
       const hf = new OpenAI({
-        apiKey: process.env.HUGGINGFACE_API_KEY || 'no-key',
+        apiKey: customKey || process.env.HUGGINGFACE_API_KEY || 'no-key',
         baseURL: 'https://router.huggingface.co/v1'
       });
       const completion = await hf.chat.completions.create({
@@ -653,7 +669,7 @@ exports.analyzeChat = async (req, res) => {
     }
     else if (providerName.includes('CEREBRAS')) {
       const cerebras = new OpenAI({
-        apiKey: process.env.CEREBRAS_API_KEY || 'no-key',
+        apiKey: customKey || process.env.CEREBRAS_API_KEY || 'no-key',
         baseURL: 'https://api.cerebras.ai/v1',
         timeout: 45000
       });
@@ -669,7 +685,7 @@ exports.analyzeChat = async (req, res) => {
       rawResponse = completion.choices[0].message.content;
     }
     else if (providerName.includes('COHERE')) {
-      const cohere = getCohereClient();
+      const cohere = getCohereClient(customKey);
       const completion = await cohere.chat({
         message: analysisUserMessage,
         preamble: activeSystemPrompt,
@@ -680,7 +696,7 @@ exports.analyzeChat = async (req, res) => {
     }
     else if (providerName.includes('GITHUB')) {
       const github = new OpenAI({
-        apiKey: process.env.GITHUB_API_KEY || 'no-key',
+        apiKey: customKey || process.env.GITHUB_API_KEY || 'no-key',
         baseURL: 'https://models.inference.ai.azure.com'
       });
       const completion = await github.chat.completions.create({
