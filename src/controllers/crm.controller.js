@@ -5,11 +5,12 @@ exports.getChats = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
+    const requestedDate = req.query.date;
     
     const token = process.env.CRM_ACCESS_TOKEN;
     const baseUrl = process.env.CRM_API_URL;
     
-    console.log(`[DEBUG] CRM Route Hit!`);
+    console.log(`[DEBUG] CRM Route Hit! Page: ${page}, Date: ${requestedDate || 'None'}`);
 
     // If no token or URL is set, return empty structure safely
     if (!token || token === 'your_access_token_here' || !baseUrl || baseUrl === 'https://your-crm-api.com/v1') {
@@ -22,13 +23,25 @@ exports.getChats = async (req, res) => {
          fetchUrl = `${fetchUrl.replace(/\/$/, '')}/query/all`;
       }
       fetchUrl = `${fetchUrl}?page=${page}&limit=${limit}&sort=createdAt:desc`;
+      if (requestedDate) {
+        fetchUrl += `&date=${requestedDate}`;
+      }
     }
 
     const response = await axios.get(fetchUrl, {
       headers: { 'Authorization': `Bearer ${token}` }
     });
 
-    const chatsArray = response.data?.data?.all || [];
+    let chatsArray = response.data?.data?.all || [];
+    
+    // Fallback manual filter in case the mock/CRM API doesn't process the 'date' query param natively
+    if (requestedDate && Array.isArray(chatsArray)) {
+      chatsArray = chatsArray.filter(chat => {
+        const chatDateStr = chat.createdAt || chat.created_at || chat.date || new Date().toISOString();
+        const chatDateOnly = new Date(chatDateStr).toISOString().split('T')[0];
+        return chatDateOnly === requestedDate;
+      });
+    }
     
     const results = {
       total: response.data?.pagination?.total || chatsArray.length || 0,
