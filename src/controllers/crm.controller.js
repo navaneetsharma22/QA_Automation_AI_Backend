@@ -1,5 +1,82 @@
 const { winstonLogger } = require('../config/logger/winston.config');
 const axios = require('axios'); // Requires 'axios' to be installed
+const { QcSubmission } = require('../database/schemas/all-schemas');
+
+let isSyncingQc = false;
+let lastSyncTime = 0;
+
+const backgroundQcSync = async () => {
+  // Only sync once every 5 minutes to avoid rate limits
+  if (isSyncingQc || (Date.now() - lastSyncTime < 5 * 60 * 1000)) return;
+  
+  isSyncingQc = true;
+  try {
+    const token = process.env.QC_ACCESS_TOKEN;
+    const baseUrl = process.env.QC_GET_API_URL || process.env.QC_API_URL;
+    if (!token || !baseUrl) return;
+
+    // We assume a GET to the QC API URL returns the list of past entries
+    const response = await axios.get(baseUrl, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      timeout: 10000 // 10 second timeout
+    });
+
+    let allEntries = [];
+    if (Array.isArray(response.data?.data)) allEntries = response.data.data;
+    else if (Array.isArray(response.data)) allEntries = response.data;
+
+    let count = 0;
+    
+    // Helper function to extract PET ID from a string
+    const extractPetId = (str) => {
+      if (!str) return null;
+      const match = str.match(/(PET-\d+-[A-Z0-9]+)/i) || str.match(/(PET-\d+)/i);
+      return match ? match[1].toUpperCase() : null;
+    };
+
+    for (const item of allEntries) {
+      // If it's a grouped object that contains activityLogs
+      const logsToProcess = Array.isArray(item.activityLogs) ? item.activityLogs : [item];
+      
+      for (const entry of logsToProcess) {
+        // Extract petition ID from details string OR direct properties
+        let petitionId = entry.petitionNumber || entry.petitionId || entry.id;
+        
+        if (!petitionId && entry.details) {
+          petitionId = extractPetId(entry.details);
+        }
+
+        if (petitionId) {
+          // Upsert the record locally
+          await QcSubmission.findOneAndUpdate(
+            { petitionId },
+            { 
+              petitionId, 
+              submittedBy: entry.agentName || entry.submittedBy || (entry.performedBy && entry.performedBy.name) || 'QC Portal Sync',
+              submittedAt: entry.createdAt || entry.timestamp || entry.date || new Date()
+            },
+            { upsert: true, new: true }
+          );
+          count++;
+        }
+      }
+    }
+    
+    if (count > 0) {
+      winstonLogger.info(`[QC SYNC] Successfully synced ${count} historical observations from QC Portal.`);
+    }
+    lastSyncTime = Date.now();
+  } catch (error) {
+    // If it's a 401, we just log it silently instead of flooding the console
+    if (error.response?.status === 401) {
+      winstonLogger.warn('[QC SYNC] QC token expired. Cannot sync historical data. Please update QC_ACCESS_TOKEN in .env');
+    } else {
+      winstonLogger.error('[QC SYNC] Background sync failed: ' + error.message);
+    }
+  } finally {
+    isSyncingQc = false;
+  }
+};
 
 exports.getChats = async (req, res) => {
   try {
@@ -22,7 +99,7 @@ exports.getChats = async (req, res) => {
       if (!fetchUrl.endsWith('/query/all')) {
          fetchUrl = `${fetchUrl.replace(/\/$/, '')}/query/all`;
       }
-      fetchUrl = `${fetchUrl}?page=${page}&limit=${limit}&sort=createdAt:desc`;
+      fetchUrl = `${fetchUrl}?page=${page}&limit=${limit}&status=resolved&sort=createdAt:desc`;
       if (requestedDate) {
         fetchUrl += `&date=${requestedDate}`;
       }
@@ -34,18 +111,31 @@ exports.getChats = async (req, res) => {
 
     let chatsArray = response.data?.data?.all || [];
     
-    // Fallback manual filter in case the mock/CRM API doesn't process the 'date' query param natively
-    if (requestedDate && Array.isArray(chatsArray)) {
+    // Fallback manual filter in case the mock/CRM API doesn't process the query params natively
+    if (Array.isArray(chatsArray)) {
       chatsArray = chatsArray.filter(chat => {
-        const chatDateStr = chat.createdAt || chat.created_at || chat.date || new Date().toISOString();
-        const chatDateOnly = new Date(chatDateStr).toISOString().split('T')[0];
-        return chatDateOnly === requestedDate;
+        let isMatch = true;
+        
+        // Ensure we only process resolved chats
+        if (chat.status && chat.status.toLowerCase() !== 'resolved') {
+          isMatch = false;
+        }
+
+        if (requestedDate) {
+          const chatDateStr = chat.createdAt || chat.created_at || chat.date || new Date().toISOString();
+          const chatDateOnly = new Date(chatDateStr).toISOString().split('T')[0];
+          if (chatDateOnly !== requestedDate) {
+            isMatch = false;
+          }
+        }
+        
+        return isMatch;
       });
     }
     
     const results = {
-      total: response.data?.pagination?.total || chatsArray.length || 0,
-      totalPages: response.data?.pagination?.pages || 1,
+      total: chatsArray.length || 0,
+      totalPages: Math.ceil(chatsArray.length / limit) || 1,
       data: Array.isArray(chatsArray) ? chatsArray.map(chat => ({
          // Keep real PET IDs for fetching
          id: chat.petitionId || chat._id || chat.id || chat.queryId || 'N/A',
@@ -56,6 +146,25 @@ exports.getChats = async (req, res) => {
          category: chat.category || chat.topic || chat.type || chat.subject || 'General'
       })) : []
     };
+
+    // Bulk check QC Submission statuses
+    if (results.data.length > 0) {
+      const petitionIds = results.data.map(chat => chat.id);
+      try {
+        const qcSubmissions = await QcSubmission.find({ petitionId: { $in: petitionIds } });
+        const submittedSet = new Set(qcSubmissions.map(qs => qs.petitionId));
+        results.data = results.data.map(chat => ({
+          ...chat,
+          qcSubmitted: submittedSet.has(chat.id)
+        }));
+      } catch (dbErr) {
+        winstonLogger.warn('Failed to fetch QcSubmissions: ' + dbErr.message);
+        results.data.forEach(chat => chat.qcSubmitted = false);
+      }
+    }
+
+    // Trigger background sync with QC Portal (fire and forget)
+    backgroundQcSync().catch(console.error);
 
     res.status(200).json(results);
   } catch (error) {
