@@ -30,6 +30,8 @@ exports.postToQC = async (req, res) => {
         petitionNumber: reportData.petitionId || reportData.analysisId || 'UNKNOWN',
         errorType: finalErrorType,
         observation: reportData.observation || reportData.reason || reportData.qaFinding || reportData.overallRecommendation || 'Automated QA Analysis.',
+        observationDescription: reportData.observation || reportData.reason || reportData.qaFinding || reportData.overallRecommendation || 'Automated QA Analysis.',
+        details: reportData.observation || reportData.reason || reportData.qaFinding || reportData.overallRecommendation || 'Automated QA Analysis.',
         agentName: reportData.agentName || 'System',
         rawReport: reportData
       }

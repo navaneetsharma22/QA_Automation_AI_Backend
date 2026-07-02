@@ -222,12 +222,14 @@ The uploaded JSON files are the absolute source of truth.
 Never ignore, override, or invent rules that conflict with the JSON knowledge base.
 If multiple JSON files are provided, combine all of them before evaluating the conversation.
 
+**STRICT COMPLIANCE MANDATE:** Do not generate a final report without first performing an exhaustive analysis. You MUST measure and compare the agent's behavior strictly against EVERY applicable rule and policy. If you have not fully analyzed the conversation against the JSON rules, do NOT output a report.
+
 ---
 ## Advanced Analysis Workflow (Antigravity QA Engine)
 Always perform the following reasoning steps in order:
 
 ### 1. Finding Generation
-Prioritize the **single highest-impact QA issue** instead of combining multiple findings unless each independently affects the outcome.
+Prioritize the **single highest-impact QA issue** instead of combining multiple broad observations unless each independently affects the outcome.
 The primary finding should represent the biggest issue affecting the customer.
 The finding should be:
 * Specific
@@ -235,23 +237,38 @@ The finding should be:
 * Customer-focused
 * SOP-aware
 
-Avoid generic findings such as 'Agent failed verification'. Instead generate findings such as 'Agent repeatedly instructed the customer to use Manage My Booking after the customer confirmed it had already failed.'
+Generate conversation-specific findings instead of generic failures such as 'agent failed to assist'. Instead generate findings such as 'Agent repeatedly instructed the customer to use Manage My Booking after the customer confirmed it had already failed.'
 Clearly distinguish between verified facts and assumptions. Do not present unconfirmed internal processes or outcomes as definite.
 
 ### 2. Finding Validation (Critical)
-Before creating any finding, perform validation. Ask internally:
-* Is this supported by the chat?
-* Is this supported by SOP?
-* Is this supported by official airline policy?
-* Did this actually happen?
-If any answer is 'No', do NOT generate the finding. Never generate findings based on assumptions.
+Before generating any FAIL finding, perform a mandatory validation:
+1. Determine the customer's actual issue.
+2. Identify the applicable SOP.
+3. Verify whether the agent's actions satisfy that SOP.
+4. Generate a FAIL only when there is clear evidence that the agent deviated from the SOP or provided incorrect, misleading, or incomplete guidance.
 
-### 3. Prevent False Positives
+Do not assume that additional questions or more information gathering are always required. Never generate findings based on assumptions. Every finding must be supported by direct chat evidence and applicable SOP.
+
+### 3. Prevent False Positives & Distinguish Issues
 Never classify a correct action as a failure.
 If the agent successfully verifies TV size after the customer asks whether the TV is acceptable, DO NOT generate 'TV verification failed.' Recognize that the verification was correctly performed.
-Do not confuse unnecessary verification, missing verification, incorrect verification, and delayed verification. These are different QA findings.
 
-### 4. Reason Generation
+Distinguish between:
+- Required verification
+- Optional verification
+- Unnecessary verification
+Never create findings such as "failed to collect booking reference" unless the SOP explicitly requires it for that scenario.
+
+Distinguish between: inability to help, unsupported assumptions, misleading information, incorrect escalation, and unsupported promises. Do not treat them as the same issue.
+
+For PASS cases:
+- Explain what the agent did correctly.
+- Explain why the guidance was appropriate.
+- Confirm that no misleading or unsupported information was provided.
+
+If the conversation complies with SOP, generate "No QA Issue" instead of attempting to identify minor or unsupported failures. Prioritize accuracy over finding additional issues.
+
+### 4. Reason & Action Generation
 Generate a concise, evidence-based reason that explains WHY the QA finding is correct. The reason must be clear, natural, and avoid unnecessary repetition.
 
 Rules:
@@ -264,7 +281,10 @@ Rules:
 - Describe the customer impact in one sentence.
 - End with a concise QA conclusion.
 
-Required Flow: Customer Issue → Applicable SOP/Policy → Expected Agent Action → Actual Agent Action → Customer Impact → QA Conclusion
+Required Flow:
+Customer Issue → Agent Behaviour → Supporting Chat Evidence → Applicable SOP → Gap Analysis → Customer Impact → QA Conclusion
+
+Also, when generating Expected Agent Actions in the JSON, generate issue-specific Expected Agent Actions instead of reusable templates.
 
 Do NOT:
 - Do NOT mention anything the agent did correctly. Focus ONLY on the failure.
@@ -310,13 +330,13 @@ Always explain how the customer was affected (e.g., Extra effort, Delay, Confusi
 Identify WHY the issue happened (e.g., Unnecessary information gathering, Incorrect assumption, Missing SOP knowledge, Repeated guidance, Operational misunderstanding, Missing escalation, Poor clarification, Unsupported promise). Do not repeat the finding.
 
 ### 13. Consistency Validation
-Before generating the report, perform a validation pass.
-✓ Finding matches evidence
-✓ Evidence supports conclusion
-✓ Severity matches impact
-✓ SOP supports finding
-✓ No contradictory statements
-Generate only internally consistent reports.
+Before generating the report, perform an internal validation to ensure:
+✓ every finding matches the evidence
+✓ every conclusion matches the SOP
+✓ no generic wording is used
+✓ no unrelated information is introduced
+
+Generate only internally consistent reports. Avoid introducing unsupported details or assumptions. Every statement must be directly supported by the conversation.
 
 ### 14. Hallucination Prevention
 Never invent SOP, escalation paths, customer actions, agent capabilities, or airline policy. If information is missing, state 'Not established in the conversation.' Do not guess.
@@ -454,16 +474,19 @@ const cleanChatTranscript = (rawText) => {
   
   let cleaned = rawText;
   
-  // 1. Convert Date & Time to just [Time]
-  cleaned = cleaned.replace(/^\d{1,2}\s+[A-Za-z]{3},\s+(\d{2}:\d{2}\s+[ap]m)\s+IST\s*/gm, '[$1]\n');
+  // 1. Remove exact Date & Time line entirely
+  cleaned = cleaned.replace(/^\d{1,2}\s+[A-Za-z]{3},\s+\d{2}:\d{2}\s+[ap]m\s+IST\r?\n?/gm, '');
   
-  // 2. Remove "X minutes ago"
-  cleaned = cleaned.replace(/^\d+\s+(minute|hour)s?\s+ago\s*/gm, '');
+  // 1b. Remove [hh:mm am/pm] timestamps if they are already compressed in the UI
+  cleaned = cleaned.replace(/^\[\d{2}:\d{2}\s+[ap]m\]\s*/gm, '');
+  
+  // 2. Remove "about X hours/minutes ago"
+  cleaned = cleaned.replace(/^(about\s+)?\d+\s+(minute|hour)s?\s+ago\r?\n?/gm, '');
   
   // 3. Remove stray single-letter initials on their own line
   cleaned = cleaned.replace(/^[A-Z]\r?\n/gm, '');
   
-  // 4. Remove UI status events
+  // 4. Remove UI status events & noise
   cleaned = cleaned.replace(/^.*has accepted this query.*\s*/gm, '');
   cleaned = cleaned.replace(/^Your query has been escalated.*\s*/gm, '');
   cleaned = cleaned.replace(/^Transfer from.*accepted by.*\s*/gm, '');
@@ -472,11 +495,16 @@ const cleanChatTranscript = (rawText) => {
   cleaned = cleaned.replace(/^Steps Performed:.*\s*/gm, '');
   cleaned = cleaned.replace(/^Reason for Escalation:.*\s*/gm, '');
   
-  // 5. Remove multiple empty lines
+  // 5. Remove standard boilerplate greetings & closings to save tokens
+  cleaned = cleaned.replace(/thank you for contacting.*?(\.|\!|\?)\s?/gi, '');
+  cleaned = cleaned.replace(/welcome to.*?(\.|\!|\?)\s?/gi, '');
+  cleaned = cleaned.replace(/my name is [A-Za-z\s]+.*?(\.|\!|\?)\s?/gi, '');
+  cleaned = cleaned.replace(/is there anything else.*?(\.|\!|\?)\s?/gi, '');
+  cleaned = cleaned.replace(/have a great (day|evening|night|weekend).*?(\.|\!|\?)\s?/gi, '');
+  cleaned = cleaned.replace(/(please wait while i|please hold on while i|allow me a moment|give me a moment).*?(\.|\!|\?)\s?/gi, '');
+
+  // 6. Remove multiple empty lines
   cleaned = cleaned.replace(/\n{2,}/g, '\n');
-  
-  // 6. Compress Time + Speaker Name onto one line
-  cleaned = cleaned.replace(/^(\[\d{2}:\d{2}\s+[ap]m\])\n([^\n]+)\n/gm, '\n$1 $2:\n');
   
   return cleaned.trim();
 };
@@ -645,7 +673,7 @@ exports.analyzeChat = async (req, res) => {
         ],
         model: aiModel || 'meta-llama/llama-3.1-8b-instruct',
         temperature: 0,
-        max_tokens: 4000,
+        max_tokens: restrictionLevel >= 1 ? 1500 : 3000,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
@@ -661,9 +689,8 @@ exports.analyzeChat = async (req, res) => {
           { role: 'user', content: analysisUserMessage }
         ],
         model: aiModel || 'meta-llama/Llama-3.3-70B-Instruct',
-        temperature: 0,
-        max_tokens: 4000,
-        response_format: { type: 'json_object' }
+        temperature: 0.1,
+        max_tokens: 3000
       });
       rawResponse = completion.choices[0].message.content;
     }
@@ -680,6 +707,7 @@ exports.analyzeChat = async (req, res) => {
         ],
         model: aiModel || 'llama-3.3-70b',
         temperature: 0,
+        max_tokens: 4000,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
@@ -706,7 +734,7 @@ exports.analyzeChat = async (req, res) => {
         ],
         model: aiModel || 'gpt-4o',
         temperature: 0,
-        max_tokens: isR1 ? 800 : 4000,
+        max_tokens: restrictionLevel >= 1 ? 1500 : 3000,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
