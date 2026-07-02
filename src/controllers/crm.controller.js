@@ -5,13 +5,13 @@ const { QcSubmission } = require('../database/schemas/all-schemas');
 let isSyncingQc = false;
 let lastSyncTime = 0;
 
-const backgroundQcSync = async () => {
+const backgroundQcSync = async (qcTokenOverride) => {
   // Only sync once every 5 minutes to avoid rate limits
   if (isSyncingQc || (Date.now() - lastSyncTime < 5 * 60 * 1000)) return;
   
   isSyncingQc = true;
   try {
-    const token = process.env.QC_ACCESS_TOKEN;
+    const token = qcTokenOverride || process.env.QC_ACCESS_TOKEN;
     const baseUrl = process.env.QC_GET_API_URL || process.env.QC_API_URL;
     if (!token || !baseUrl) return;
 
@@ -95,14 +95,16 @@ exports.getChats = async (req, res) => {
     }
 
     let fetchUrl = baseUrl;
-    if (!fetchUrl.includes('?')) {
-      if (!fetchUrl.endsWith('/query/all')) {
-         fetchUrl = `${fetchUrl.replace(/\/$/, '')}/query/all`;
-      }
-      fetchUrl = `${fetchUrl}?page=${page}&limit=${limit}&status=resolved&sort=createdAt:desc`;
-      if (requestedDate) {
-        fetchUrl += `&date=${requestedDate}`;
-      }
+    if (fetchUrl.includes('?')) {
+      fetchUrl = fetchUrl.split('?')[0];
+    }
+    if (!fetchUrl.endsWith('/query/all')) {
+       fetchUrl = `${fetchUrl.replace(/\/$/, '')}/query/all`;
+    }
+    // Use view=resolved so the CRM API filters before pagination, otherwise we might get empty pages after local filtering
+    fetchUrl = `${fetchUrl}?page=${page}&limit=${limit}&view=resolved&sort=createdAt:desc`;
+    if (requestedDate) {
+      fetchUrl += `&date=${requestedDate}`;
     }
 
     const response = await axios.get(fetchUrl, {
@@ -133,9 +135,12 @@ exports.getChats = async (req, res) => {
       });
     }
     
+    // Extract real total from CRM API if available, else fallback to array length
+    const realTotal = response.data?.counts?.resolved || chatsArray.length || 0;
+    
     const results = {
-      total: chatsArray.length || 0,
-      totalPages: Math.ceil(chatsArray.length / limit) || 1,
+      total: realTotal,
+      totalPages: Math.ceil(realTotal / limit) || 1,
       data: Array.isArray(chatsArray) ? chatsArray.map(chat => ({
          // Keep real PET IDs for fetching
          id: chat.petitionId || chat._id || chat.id || chat.queryId || 'N/A',
@@ -163,8 +168,9 @@ exports.getChats = async (req, res) => {
       }
     }
 
+    const qcTokenOverride = req.headers['x-qc-token'];
     // Trigger background sync with QC Portal (fire and forget)
-    backgroundQcSync().catch(console.error);
+    backgroundQcSync(qcTokenOverride).catch(console.error);
 
     res.status(200).json(results);
   } catch (error) {
