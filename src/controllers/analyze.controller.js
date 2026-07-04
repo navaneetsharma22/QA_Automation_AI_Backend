@@ -217,6 +217,11 @@ You are an enterprise chat quality analysis engine specialized in reviewing cust
 Your primary objective is ACCURATE evaluation — correctly identifying genuine QA issues AND correctly passing compliant conversations with EQUAL confidence. A false-positive QA failure (incorrectly failing a conversation that follows SOP) is EQUALLY as damaging as missing a real issue. You must be just as confident in generating "No QA Issue" as you are in identifying genuine problems. Evaluate conversations through evidence-based, context-aware reasoning by strictly comparing the full conversation against the provided JSON knowledge base.
 
 ---
+## PRIMARY QA PRINCIPLE: VERIFICATION-FIRST
+Always answer ONE question first: **"Did the agent actually verify the customer's situation before giving the answer?"**
+If NO → Critical QA Failure. If YES → Continue evaluation. Never assume, never infer, never invent policy.
+
+---
 ## Primary Rule
 The uploaded JSON files are the absolute source of truth.
 Never ignore, override, or invent rules that conflict with the JSON knowledge base.
@@ -335,8 +340,10 @@ Generate only the minimum evidence required. Include only messages proving the f
 Do NOT include Greetings, Waiting messages, Thank you messages, Duplicate information, or Irrelevant conversation.
 Preferred size: 2-5 customer/agent exchanges. Every included message must directly support the finding.
 
-### 6. Customer Intent Detection
-Identify Primary Intent, Secondary Intent, and Final Desired Outcome. Track how customer intent changes throughout the conversation. Evaluate the complete conversation, never messages independently.
+### 6. HUMAN DECISION FLOW (3-Step Framework)
+**Step 1: Identify the customer's REAL issue.** Ignore the ticket category. Find the actual problem based on the customer's words (e.g. "I can't cancel" = Cancellation).
+**Step 2: Check whether the agent correctly understood the issue.** If the agent answers a different issue = Critical Failure.
+**Step 3: Determine whether verification was REQUIRED.** General FAQs usually don't require verification. Booking-specific, refunds, compensation, cancellation, reschedule, and baggage issues ALWAYS require verification before answering.
 
 ### 7. Context Tracking
 Remember previous messages. If customer says 'I already tried that,' remember this. Never recommend the same action without recognizing that it already failed. Track previous troubleshooting, objections, repeated requests, escalations, and previously answered questions.
@@ -377,6 +384,19 @@ Calculate confidence internally. If confidence is low, prefer 'Potentially Misle
 
 ### 16. Final Goal
 Think like an experienced QA auditor. Understand customer intent, follow chronology, detect SOP violations, validate policy, avoid false positives and hallucinations, select concise logs, explain impact, generate evidence-based findings, and produce GPT-level reasoning while keeping the JSON format EXACTLY the same.
+
+### 17. CONTRADICTION CHECK
+Mark as a Critical Failure if the agent contradicts their own limitations. Example patterns:
+* "I cannot access booking" → Later says "I checked your booking"
+* "I cannot verify" → Later says "I confirmed"
+* "I cannot access" → Later says "I know your fare"
+
+### 18. MISLEADING ASSISTANCE RULE
+Mark MISLEADING whenever the agent states any of the following without verification:
+"You are eligible", "You will receive", "You cannot", "You will get", "You are entitled", "You will definitely", "You are not eligible", "This fare cannot", "There is no exception", "This is policy", "You'll receive compensation", "You'll receive refund", "Courier will deliver", "Priority baggage failed", "Hotel will be covered", "Food vouchers", "Automatic rebooking".
+
+### 19. SUPERVISOR VALIDATION
+If the customer requests a supervisor, verify: Was escalation completed? Did the supervisor add value? Did the supervisor verify more? Or did they simply repeat the same unverified information? If repeat only = Failed escalation.
 
 ---
 ## LOGICAL CONSISTENCY ENFORCEMENT (CRITICAL — DO NOT VIOLATE)
@@ -549,6 +569,7 @@ const buildCompressedSystemPromptForR1 = (projectCards, detectedCategory) => {
 You evaluate customer support chats against airline SOP rules. The JSON rules below are the ABSOLUTE source of truth. Never invent rules.
 
 ## CRITICAL: Accuracy Rules
+0. VERIFICATION-FIRST: Ask "Did the agent actually verify the customer's situation before answering?" If NO → Critical Failure. If YES → Continue.
 1. DEFAULT IS PASS. Only fail with: exact SOP violation + direct chat evidence + real customer harm.
 2. Never invent requirements. If SOP doesn't EXPLICITLY require an action for THIS scenario → PASS.
 3. No false positives. Sufficient response = PASS even if not perfect. When in doubt → PASS.
@@ -564,14 +585,15 @@ You evaluate customer support chats against airline SOP rules. The JSON rules be
 - If no genuine SOP violations → qaFinding MUST be "No QA Error Found"
 
 ## Analysis Steps
-1. Identify customer's ACTUAL intent from their words
+1. Find REAL issue (not ticket category) → Did agent understand it? → Was verification required?
 2. Find applicable SOP rules from JSON
 3. Compare agent's actual actions vs SOP requirements
 4. Generate findings with DIRECT evidence only
-5. Track context (if customer says "I already tried that", remember it)
-6. Validate agent's policy statements against official policy
-7. Classify resolution: Resolved/Partially Resolved/Not Resolved
-8. Explain customer impact specifically (not generic)
+5. Contradiction Check: E.g., "I cannot access" followed by "I checked your booking" = CRITICAL FAIL.
+6. Misleading Check: Fails if agent says "You will receive", "You are eligible", "You cannot", etc. without verification.
+7. Validate agent's policy statements against official policy
+8. Classify resolution: Resolved/Partially Resolved/Not Resolved
+9. Explain customer impact specifically (not generic)
 ${bookingSourceNote}
 
 ## Chat Logs: Max 4 pairs (8 msgs). Only error evidence. Use REAL speaker names from chat. No greetings/closings/noise.
@@ -581,6 +603,14 @@ ${categoryContextString ? `## Policy Context\n${categoryContextString}\n` : ''}
 
 ## Rules JSON
 ${rulesString}
+
+## GOLDEN RULE (Final Checklist)
+1. Did the agent identify the actual issue?
+2. Did the agent verify all required information before answering?
+3. Did the agent provide any unverified commitments or guarantees?
+4. Did the agent contradict their own limitations?
+5. Would a reasonable customer leave with incorrect expectations?
+If ANY answer is YES (to 3, 4, 5) or NO (to 1, 2) → QA Finding is FAIL with chat evidence.
 
 ## OUTPUT: Return ONLY valid JSON (no markdown, no reasoning text, no \`\`\`)
 ${outputSchema}`;
@@ -952,14 +982,46 @@ exports.analyzeChat = async (req, res) => {
       cleanedResponse = cleanedResponse.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '');
     }
     
-    // Fallback: extract substring if there is trailing/leading non-JSON text
-    const firstBrace = cleanedResponse.indexOf('{');
-    const lastBrace = cleanedResponse.lastIndexOf('}');
-    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
-      cleanedResponse = cleanedResponse.substring(firstBrace, lastBrace + 1);
+    let parsedJson;
+    try {
+      parsedJson = JSON.parse(cleanedResponse);
+    } catch (err) {
+      try {
+        // Fallback 1: Extract substring (for trailing markdown)
+        const firstBrace = cleanedResponse.indexOf('{');
+        const lastBrace = cleanedResponse.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
+          parsedJson = JSON.parse(cleanedResponse.substring(firstBrace, lastBrace + 1));
+        } else {
+          throw err;
+        }
+      } catch (e2) {
+        // Fallback 2: Truncated JSON repair (for context limits)
+        try {
+          let repaired = cleanedResponse.trim();
+          let openBraces = 0, openBrackets = 0, inString = false, escape = false;
+          for (let i = 0; i < repaired.length; i++) {
+            let c = repaired[i];
+            if (escape) { escape = false; continue; }
+            if (c === '\\') { escape = true; continue; }
+            if (c === '"') { inString = !inString; continue; }
+            if (!inString) {
+              if (c === '{') openBraces++;
+              if (c === '}') openBraces--;
+              if (c === '[') openBrackets++;
+              if (c === ']') openBrackets--;
+            }
+          }
+          if (inString) repaired += '"';
+          while (openBrackets > 0) { repaired += ']'; openBrackets--; }
+          while (openBraces > 0) { repaired += '}'; openBraces--; }
+          parsedJson = JSON.parse(repaired);
+        } catch (e3) {
+          console.error('Failed to repair JSON. Truncation too severe or format invalid.');
+          throw err; // Throw the original parse error
+        }
+      }
     }
-
-    const parsedJson = JSON.parse(cleanedResponse);
     
     if (!parsedJson.findings) parsedJson.findings = [];
     if (projectCards && projectCards.length > 0) {

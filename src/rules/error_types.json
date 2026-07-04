@@ -1,1 +1,14 @@
-[]
+[
+  {
+    "name": "CRITICAL",
+    "description": "Wrong issue identified, No verification, False policy, Guaranteed outcomes, Contradictions, Wrong baggage handling, Connection baggage not verified, Compensation guaranteed, Refund guaranteed, Fare restrictions assumed, Booking assumed, Operational promises."
+  },
+  {
+    "name": "MAJOR",
+    "description": "Poor probing, Incomplete validation, Weak escalation."
+  },
+  {
+    "name": "MINOR",
+    "description": "Grammar, Tone, Typing, Formatting."
+  }
+]
