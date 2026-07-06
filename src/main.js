@@ -4,6 +4,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const jwt = require('jsonwebtoken');
 const { winstonLogger } = require('./config/logger/winston.config');
 const analyzeRouter = require('./routes/analyze.routes');
 const rulesRouter = require('./routes/rules.routes');
@@ -13,6 +14,21 @@ const projectsRouter = require('./routes/projects.routes');
 const errorTypesRouter = require('./routes/errorTypes.routes');
 const crmRouter = require('./routes/crm.routes');
 const qcRouter = require('./routes/qc.routes');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_2026_dev';
+
+const verifyToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'No token provided', code: 'TOKEN_MISSING' });
+  try {
+    req.user = jwt.verify(token, JWT_SECRET);
+    next();
+  } catch (err) {
+    const code = err.name === 'TokenExpiredError' ? 'TOKEN_EXPIRED' : 'TOKEN_INVALID';
+    return res.status(401).json({ error: 'Your session has expired. Please log in again.', code });
+  }
+};
 
 const app = express();
 const mongoose = require('mongoose');
@@ -50,7 +66,13 @@ apiRouter.get('/', (req, res) => {
   res.json({ message: 'Welcome to QA Automation REST API' });
 });
 
-// Add your module routes here
+// Public auth routes (no token required)
+apiRouter.post('/users/login', require('./controllers/users.controller').loginUser);
+apiRouter.post('/users', require('./controllers/users.controller').createUser);
+
+// All routes below require a valid JWT
+apiRouter.use(verifyToken);
+
 apiRouter.use('/analyze', analyzeRouter);
 apiRouter.use('/rules', rulesRouter);
 apiRouter.use('/prompt', promptRouter);

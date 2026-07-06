@@ -1,6 +1,10 @@
 const fs = require('fs');
 const path = require('path');
+const jwt = require('jsonwebtoken');
 const { winstonLogger } = require('../config/logger/winston.config');
+
+const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_2026_dev';
+const JWT_EXPIRES_IN = '15h';
 
 const USERS_FILE_PATH = path.join(__dirname, '..', 'rules', 'users.json');
 
@@ -74,13 +78,15 @@ exports.loginUser = (req, res) => {
       return res.status(403).json({ error: 'Your account has been suspended. Please contact the administrator.' });
     }
 
-    // In a real app we'd generate a real JWT here
-    const token = 'jwt_mock_' + Date.now();
+    const payload = { id: user.id, email: user.email, role: user.role };
+    const token = jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN });
+    const expiresAt = Date.now() + 15 * 60 * 60 * 1000; // 15 hours in ms
 
     res.json({
       message: 'Login successful',
       token,
-      user: { ...user, password: undefined, token }
+      expiresAt,
+      user: { ...user, password: undefined, token, expiresAt }
     });
   } catch (err) {
     winstonLogger.error('Error logging in:', err);
