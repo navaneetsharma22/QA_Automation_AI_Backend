@@ -24,18 +24,23 @@ if (process.env.MONGODB_URI) {
 }
 
 
-// Security & Middleware
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || origin.startsWith('http://localhost') || origin === process.env.CLIENT_URL) {
-      callback(null, true);
-    } else {
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
-  methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
-  credentials: true,
-}));
+// Security & Middleware — Manual CORS to guarantee preflight works
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin || origin.startsWith('http://localhost') || origin === process.env.CLIENT_URL) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+  }
+  res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-use-personal-keys,x-groq-key,x-openai-key,x-anthropic-key,x-gemini-key,x-deepseek-key,x-openrouter-key,x-huggingface-key,x-cerebras-key,x-cohere-key,x-github-key');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+
+  // Immediately respond to preflight
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+  next();
+});
+
 app.use(express.json());
 
 // Global Prefix route structure
