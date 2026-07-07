@@ -103,10 +103,10 @@ ${promptContext.globalInstructions || 'No custom global instructions provided.'}
       return contextStr;
     }).filter(str => str !== '').join('\n');
     
-    if (restrictionLevel === 1 && categoryContextString.length > 4000) {
-      categoryContextString = categoryContextString.substring(0, 4000) + '\n...[CONTEXT TRUNCATED DUE TO API LIMITS]';
-    } else if (restrictionLevel === 2 && categoryContextString.length > 500) {
-      categoryContextString = categoryContextString.substring(0, 500) + '\n...[CONTEXT TRUNCATED DUE TO EXTREME API LIMITS]';
+    if (restrictionLevel === 1 && categoryContextString.length > 2000) {
+      categoryContextString = categoryContextString.substring(0, 2000) + '\n...[TRUNCATED]';
+    } else if (restrictionLevel === 2 && categoryContextString.length > 300) {
+      categoryContextString = categoryContextString.substring(0, 300) + '\n...[TRUNCATED]';
     }
     
     if (!categoryContextString.trim()) {
@@ -141,56 +141,7 @@ ${promptContext.globalInstructions || 'No custom global instructions provided.'}
       }
     : null;
 
-  const defaultOutputSchema = `
-You MUST return your response as a valid JSON object with EXACTLY this structure:
-{
-  "qaScore": <number 0-100>,
-  "status": "<Passed | Warning | Failed>",
-  "misleadingPercentage": <number 0-100>,
-  "petitionId": "<Extract the PET ID from the chat, or null if missing>",
-  "agentName": "<Extract the agent's name from the chat, or null if missing>",
-  "errorType": "<Short categorization of the main error, e.g. 'AHT', 'Grammatical', 'Misleading', 'None', etc.>",
-  "overallRecommendation": "<A 1-2 sentence summary of the agent's performance>",
-
-  "qaFinding": "<Main QA finding result, e.g. 'No QA Error Found' or a brief description of the primary issue>",
-
-  "criticalChatLogs": [
-    { 
-      "speaker": "<MUST use the ACTUAL REAL NAME of the person speaking, e.g., 'Dennis (Agent)' or 'Makayla Mendoza (Customer)'. DO NOT use dummy names like 'Agent' or 'Customer'.>", 
-      "message": "<Exact message text. Follow the 'Critical Chat Logs Extraction Rules' strictly>" 
-    }
-  ],
-
-  "findings": [
-    {
-      "ruleName": "<Rule or check heading, e.g. 'Issue Identification', 'Incorrect PIR Guidance', 'Misleading Information'>",
-      "description": "<What the agent did related to this rule>",
-      "status": "<Pass | Fail | Not Applicable>",
-      "explanation": "<Why it passed, failed, or does not apply. For Fail: cite the specific rule or policy AND include the exact chat evidence (direct quote from the conversation)>",
-      "evidence": ["<Exact quote from the conversation proving the violation — REQUIRED when status is Fail, omit when Pass or Not Applicable>"]
-    }
-  ],
-
-  "expectedAgentAction": ["<Action 1 the agent should have taken>", "<Action 2>", "<Action 3>"],
-  "agentAction": "<Paragraph describing what the agent actually did>",
-  "missingExpectedAction": "<What was missing from the agent's response, or 'None' if fully addressed>",
-
-  "ahtAnalysis": {
-    "result": "<'No AHT Issue' or description of AHT problem>",
-    "timeline": ["<HH:MM → HH:MM — X minutes>"],
-    "observation": "<Summary observation about response time thresholds>"
-  },
-
-  "reason": "<Overall explanation paragraph of why the agent passed or failed QA>",
-
-  "qaConclusion": {
-    "status": "<QA Passed | QA Failed>",
-    "misleading": "<Yes | No>",
-    "severity": "<None | Low | Medium | High | Critical>",
-    "observations": ["<Observation 1>", "<Observation 2>"],
-    "decision": "<Final paragraph with the overall QA verdict>"
-  }
-}`;
+  const defaultOutputSchema = `{"qaScore":0-100,"status":"Passed|Warning|Failed","misleadingPercentage":0-100,"petitionId":"PET ID or null","agentName":"name or null","customerName":"name or null","customerIssue":"issue","issueCategory":"category","errorType":"type","overallRecommendation":"summary","qaFinding":"finding","applicableSop":"SOP","failureCondition":"condition or None","rootCause":"cause or None","criticalChatLogs":[{"speaker":"REAL NAME (Role)","message":"text"}],"findings":[{"ruleName":"rule","status":"Pass|Fail|Not Applicable","description":"desc","explanation":"why","evidence":["quote"]}],"expectedAgentAction":["action"],"agentAction":"what agent did","missingExpectedAction":"missing or None","ahtAnalysis":{"result":"result","timeline":["HH:MM"],"observation":"obs"},"reason":"50-90 words","qaConclusion":{"status":"QA Passed|QA Failed","misleading":"Yes|No","severity":"None|Low|Moderate|High|Critical","observations":["obs"],"decision":"verdict"}}`;
 
   const dynamicOutputSchema = `
 You MUST return your response as a valid JSON object with EXACTLY this structure:
@@ -207,11 +158,11 @@ ${JSON.stringify(dynamicFindingSchema, null, 4)}
   ]
 }`;
 
-  let rulesString = JSON.stringify(corendonRules);
-  if (restrictionLevel === 1 && rulesString.length > 8000) {
-    rulesString = rulesString.substring(0, 8000) + '...[RULES TRUNCATED DUE TO API LIMITS]"}';
-  } else if (restrictionLevel === 2 && rulesString.length > 1000) {
-    rulesString = rulesString.substring(0, 1000) + '...[RULES TRUNCATED DUE TO EXTREME API LIMITS]"}';
+  let rulesString = (corendonRules.rules || [])
+    .map(r => `${r.id}:${r.title}`)
+    .join('|');
+  if (rulesString.length > 2000) {
+    rulesString = rulesString.substring(0, 2000) + '|...';
   }
 
   return `
@@ -236,6 +187,117 @@ Your primary objective is ACCURATE evaluation — correctly identifying genuine 
 ## PRIMARY QA PRINCIPLE: VERIFICATION-FIRST
 Always answer ONE question first: **"Did the agent actually verify the customer's situation before giving the answer?"**
 If NO → Critical QA Failure. If YES → Continue evaluation. Never assume, never infer, never invent policy.
+
+---
+## ⚙️ MANDATORY RULE ENGINE — EVALUATE EVERY RULE ON EVERY CONVERSATION
+
+The following 20 rules are MANDATORY. You MUST evaluate ALL of them for EVERY conversation without exception. Never skip a rule. Never invent policies. Never assume missing information.
+
+### MANDATORY GLOBAL RULES (evaluate ALL 20 for every conversation)
+
+| # | Rule Name | Evaluation Requirement |
+|---|-----------|------------------------|
+| 1 | Customer Issue Identification | Did the agent correctly identify the customer's PRIMARY issue before responding? |
+| 2 | Customer Name Accuracy | Did the agent use the correct customer name throughout? |
+| 3 | Agent Identity (Alias) Verification | Did the agent use only their assigned alias — never their own real name in introduction, sign-off, or self-reference? |
+| 4 | Customer Addressing (Name or Flyer) | Did the agent address the customer by name or as "Flyer" at least once? |
+| 5 | Original Question Resolution | Was the customer's original question fully resolved? |
+| 6 | SOP Compliance | Did the agent follow all applicable Corendon Airlines SOPs? |
+| 7 | Misleading Information | Did the agent provide any misleading, incorrect, or unverified information? |
+| 8 | False Commitment | Did the agent make any promise or commitment without backend verification? |
+| 9 | Policy Violation | Did the agent contradict or bypass any Corendon Airlines policy? |
+| 10 | Critical Error Detection | Did any agent action constitute a Critical Error per the defined error types? |
+| 11 | Communication Quality | Was the agent's communication clear, professional, and appropriate? |
+| 12 | Complete vs Partial Resolution | Was the resolution complete, partial, or unresolved? |
+| 13 | Escalation Requirement | Was escalation required? If yes, was it performed correctly (internal Tier 1→2→3)? |
+| 14 | Response Time (ART) | Were there any response delays exceeding 4 minutes without a customer update? |
+| 15 | Correct Issue Identification Before Guidance | Did the agent correctly identify the customer's issue BEFORE providing any guidance? |
+| 16 | No Forced Tier 3 Resolution | Did the agent avoid forcefully resolving a case that required Tier 3 verification? |
+| 17 | No Unauthorized Backend Claim | Did the agent avoid claiming backend/system verification without authorization? |
+| 18 | No Booking Assumption | Did the agent avoid guessing or assuming any booking information? |
+| 19 | No Policy Contradiction | Did the agent avoid contradicting Corendon Airlines company policy at any point? |
+| 20 | No Hallucinated Information | Did the agent avoid providing hallucinated, invented, or fabricated information? |
+
+**EVALUATION INSTRUCTION:** For each of the 20 rules above, generate a finding entry.
+**OUTPUT SIZE RULE — CRITICAL FOR PERFORMANCE:**
+- For rules with status **Pass** or **Not Applicable**: output ONLY {"ruleName":"<name>","status":"Pass"} or {"ruleName":"<name>","status":"Not Applicable"} — NO description, NO explanation, NO evidence. This is mandatory to reduce output size.
+- For rules with status **Fail**: output the FULL 8-point structure with description, explanation, and evidence array.
+- Use "Not Applicable" ONLY when the rule genuinely cannot apply. Use "Pass" when compliant. Use "Fail" only with DIRECT, UNAMBIGUOUS chat evidence.
+
+### CATEGORY-SPECIFIC VALIDATION
+
+After evaluating all 20 mandatory global rules, also evaluate the category-specific SOP rules that apply to the detected conversation category. Load and evaluate ONLY the SOPs relevant to the detected category in addition to the global rules.
+
+Applicable categories and their specific validation focus:
+- **Booking**: Payment verification, name change, PNR verification, booking source
+- **Refund**: Booking source verification, refund eligibility, L3 escalation requirement
+- **Cancellation**: Booking source verification, third-party vs direct booking handling
+- **Reschedule**: Booking source, fare breakdown, L3 escalation for pricing
+- **Payment**: Transaction verification, duplicate payment, L3 escalation
+- **Promo Code**: Source verification (Corendon vs third-party), Tier 3 escalation, no unauthorized commitment
+- **Lost Baggage**: PIR requirement, PIR cannot be online, return-to-airport advice, connecting flight verification
+- **Damaged Baggage**: PIR at airport, connecting flight check, mixed-airline re-check guidance
+- **Missing Baggage**: PIR mandatory, online PIR not possible, Lost & Found referral
+- **Connecting Flight**: Baggage transfer rules (all-Corendon vs mixed-airline)
+- **Travel Agency Booking**: Direct to booking partner, no direct processing
+- **Check-in**: Online vs airport check-in distinction, correct guidance
+- **Boarding Pass**: Scanning issue handling, no unauthorized boarding approval
+- **Passenger Addition**: L3 escalation, no unauthorized confirmation
+- **Password Reset**: Correct self-service guidance, no unauthorized account access
+- **Airport Arrival**: Correct arrival procedure guidance
+- **Compensation**: No unauthorized EU261 approval, L3 escalation
+- **Flight Delay**: No unverified delay duration/reason, L3 escalation
+- **Seat**: No guaranteed seat assignment, L3 escalation
+- **Meal**: No confirmed meal processing without verification, L3 escalation
+- **Special Assistance**: Correct escalation, no unauthorized commitment
+
+### FINDING GENERATION — MANDATORY STRUCTURE
+
+Generate findings ONLY from the mandatory rules above.
+- **Pass/Not Applicable findings**: output ONLY ruleName + status. No other fields.
+- **Fail findings**: MUST include all 8-point structure fields with exact chat evidence.
+
+### REASON GENERATION — STRICT RULES
+
+The 'reason' field in the final output MUST:
+- NEVER praise the agent
+- ONLY explain: policy violations, critical errors, missing verification, missing escalation, false commitments, misleading guidance, incorrect issue identification, wrong customer name, alias violations, SOP violations, forcefully resolved cases
+- If NO issues exist, return EXACTLY: "No policy violations, misleading guidance, or critical errors were detected."
+- Be 50-90 words, one paragraph, professional QA language
+- Start with the agent's mistake -- NOT with the customer's issue
+- Include the specific SOP reference and exact chat evidence for every violation
+
+### SEVERITY CLASSIFICATION — AUTOMATIC
+
+Classify every finding automatically based on customer impact and SOP violation:
+- **Critical**: Unverified commitments, false information, unauthorized backend claims, wrong issue identification, forced Tier 3 resolution, hallucinated policy, incorrect flyer identification
+- **High**: Missing mandatory escalation, booking source not verified for refund/cancel/reschedule, missing PIR guidance, incorrect baggage transfer guidance
+- **Moderate**: Missing information gathering, incomplete troubleshooting, partial resolution, ART violation
+- **Low**: Minor communication issues, customer addressing failure, alias minor observation
+- **None**: Full compliance, no violations
+
+### FINAL QA REPORT — MANDATORY FIELDS
+
+Every report MUST include ALL of the following fields in the JSON output:
+- petitionId: Petition Number extracted from the chat
+- agentName: Agent Name extracted from the chat
+- customerName: Customer Name extracted from the chat
+- customerIssue: Customer Issue (primary issue identified)
+- issueCategory: Issue Category (detected category)
+- qaFinding: QA Finding summary
+- findings: Array of all mandatory rule findings
+- applicableSop: The primary SOP that applies to this conversation
+- expectedAgentAction: Expected actions array
+- agentAction: What the agent actually did
+- failureCondition: The specific failure condition triggered, or None
+- criticalChatLogs: Chat evidence (max 4 pairs)
+- rootCause: Root cause of the failure, or None
+- qaScore: QA Score (0-100)
+- status: Passed | Warning | Failed
+- misleadingPercentage: Misleading percentage
+- qaConclusion.severity: Severity level (Critical | High | Moderate | Low | None)
+- qaConclusion.status: QA Passed | QA Failed
+- reason: QA Reason (following the strict reason generation rules above)
 
 ---
 ## Primary Rule
@@ -380,320 +442,52 @@ For every QA finding, include these 8 elements:
 **Step 2: Check whether the agent correctly understood the issue.** If the agent answers a different issue = Critical Failure.
 **Step 3: Determine whether verification was REQUIRED.** General FAQs usually don't require verification. Booking-specific, refunds, compensation, cancellation, reschedule, and baggage issues ALWAYS require verification before answering.
 
-### 7. Context Tracking
-Remember previous messages. If customer says 'I already tried that,' remember this. Never recommend the same action without recognizing that it already failed. Track previous troubleshooting, objections, repeated requests, escalations, and previously answered questions.
-
-### 8. SOP Reasoning
-Do not only detect SOP violations. Explain which SOP applies, why it applies, whether the agent complied, and whether customer impact exists. Never mention SOP that is unrelated to the conversation.
-${['Booking', 'Cancellation', 'Reschedule', 'Refund'].includes(detectedCategory) ? '\n**BOOKING SOURCE SOP:** Because this is a ' + detectedCategory + ' query, check whether the agent verified the booking source (direct vs third-party). If the customer\'s issue REQUIRES booking source verification per SOP AND the agent did not verify it AND it led to incorrect guidance → this is a valid FAIL. However, if the booking source was already clear from context, or the agent\'s guidance was correct regardless, do NOT auto-fail for missing this step.' : ''}
-
-### 9. Policy Validation
-Whenever the agent explains airline policy, validate internally against official policy. Determine whether the response is Correct, Partially Correct, Incomplete, Misleading, or Incorrect.
-
-### 10. Resolution Analysis
-Classify the interaction as Resolved, Partially Resolved, or Not Resolved with a brief evidence-based explanation.
-Resolution depends on the customer's actual outcome, not merely whether information was provided.
-A case is 'Resolved' only if the customer's core issue was fully addressed. 'Partially Resolved' means the agent addressed some aspects but left gaps. 'Not Resolved' means the customer's problem remains unaddressed.
-Every resolution classification must be directly supported by the conversation.
-
-### 11. Customer Impact
-Always explain how the customer was affected (e.g., Extra effort, Delay, Confusion, False expectations, Financial risk, Operational misunderstanding). Avoid generic statements.
-
-### 12. Root Cause Analysis
-Identify WHY the issue happened (e.g., Unnecessary information gathering, Incorrect assumption, Missing SOP knowledge, Repeated guidance, Operational misunderstanding, Missing escalation, Poor clarification, Unsupported promise). Do not repeat the finding.
-
 ### 13. Consistency Validation — Expert QA Audit
-Before generating the report, perform an internal validation to ensure:
-✓ every finding matches the evidence
-✓ every conclusion matches the SOP
-✓ no generic wording is used
-✓ no unrelated information is introduced
-✓ every finding includes the 8-point structure (SOP, Action, Evidence, Comparison, Impact, Risk, Severity, Recommendation)
-✓ every reason field contains ONLY agent mistakes with policy references
-✓ every finding is conversation-specific, not a template
-✓ every conclusion is supported by exact chat quotes
-
-Generate only internally consistent reports. Avoid introducing unsupported details or assumptions. Every statement must be directly supported by the conversation. Think like a Senior QA Auditor: be specific, be evidence-based, be policy-focused.
+Validate that every Fail has direct evidence, every conclusion matches the SOP, and the reason field contains only violations. Pass/Not Applicable findings must be compact: output only {"ruleName":"...","status":"Pass"} or {"ruleName":"...","status":"Not Applicable"}.
 
 ### 14. Hallucination Prevention
-Never invent SOP, escalation paths, customer actions, agent capabilities, or airline policy. If information is missing, state 'Not established in the conversation.' Do not guess.
+Never invent SOPs, escalation paths, customer actions, agent capabilities, or airline policy. If a fact is missing, write "Not established in the conversation." Do not guess.
 
 ### 15. Confidence Validation
-Calculate confidence internally. If confidence is low, prefer 'Potentially Misleading' instead of 'Incorrect.' Do not make absolute conclusions without evidence.
+Use conservative conclusions when evidence is ambiguous. If you are not sure, prefer Pass.
 
 ### 16. Final Goal — Expert Policy-Based QA Analysis
-Think like a **Senior QA Auditor with 10+ years of experience**. Your analysis must:
-- Understand customer intent and follow conversation chronology
-- Detect SOP violations by comparing agent actions against specific policy rules
-- Validate policy statements against official Corendon Airlines guidelines
-- Avoid false positives and hallucinations by requiring direct evidence
-- Select concise, targeted chat logs that prove the finding
-- Explain customer impact and business risk specifically (not generically)
-- Generate evidence-based findings with policy references
-- Produce enterprise-level QA audit reasoning while keeping the JSON format EXACTLY the same
-- Never generate generic observations that could apply to any conversation
-- Every finding must be conversation-specific and policy-justified
-- Every reason must cite the specific SOP and include exact chat evidence
+Think like a **Senior QA Auditor with 10+ years of experience**. Your analysis must stay conversation-specific, policy-justified, evidence-based, and aligned to the JSON schema.
 
-### 17. CONTRADICTION CHECK
-Mark as a Critical Failure if the agent contradicts their own limitations. Example patterns:
-* "I cannot access booking" → Later says "I checked your booking"
-* "I cannot verify" → Later says "I confirmed"
-* "I cannot access" → Later says "I know your fare"
-
-### 18. MISLEADING ASSISTANCE RULE
-Mark MISLEADING whenever the agent states any of the following without verification:
-"You are eligible", "You will receive", "You cannot", "You will get", "You are entitled", "You will definitely", "You are not eligible", "This fare cannot", "There is no exception", "This is policy", "You'll receive compensation", "You'll receive refund", "Courier will deliver", "Priority baggage failed", "Hotel will be covered", "Food vouchers", "Automatic rebooking".
-
-### 19. SUPERVISOR VALIDATION
-If the customer requests a supervisor, verify: Was escalation completed? Did the supervisor add value? Did the supervisor verify more? Or did they simply repeat the same unverified information? If repeat only = Failed escalation.
-
-### 23. CALL SUPPORT ESCALATION POLICY (APPLIES TO EVERY CONVERSATION — MANDATORY)
-This rule is MANDATORY and must be evaluated on EVERY conversation where escalation is applicable, regardless of category.
-
-**Policy:** The correct internal escalation flow is: Tier 1 Agent (L1) → escalates internally to Tier 2 (L2) → Tier 2 escalates to Tier 3 / Dev (L3) when backend verification is required. The agent MUST NEVER instruct the flyer to call customer support, contact a call centre, or reach any external support channel as a substitute for creating an internal escalation. The responsibility for internal escalation belongs entirely to the agent — it must NEVER be transferred to the flyer.
-
-**How to evaluate:**
-- Scan every agent message for any instruction directing the flyer to call customer support, call a phone number, or contact a call centre as the resolution path for an issue that requires internal escalation.
-- Trigger phrases: "please call our customer support", "please contact our call centre", "call us at", "contact customer service directly", "call our support line", "please call support", "you will need to call", "I recommend you call", or any equivalent instruction to phone Corendon Airlines support as the primary resolution path.
-- If such an instruction is found AND the issue required internal escalation → this is a Critical violation.
-- Verify that when escalation was required, the agent created or offered an internal escalation (Tier 2 / Tier 3) rather than redirecting the flyer externally.
-
-**PASS condition:** Issue was resolved at Tier 1 without escalation, OR agent created an internal escalation without instructing the flyer to call support as the resolution path, OR no escalation scenario exists in the conversation → finding status = "Pass".
-**FAIL condition:** Agent instructed the flyer to call customer support or a call centre instead of creating an internal escalation → finding status = "Fail", ruleName = "Incorrect Escalation Process", severity = CRITICAL.
-
-**Report requirements on FAIL — ALL four fields are MANDATORY:**
-1. The exact agent message containing the call support instruction (direct quote).
-2. Explanation: the agent transferred internal escalation responsibility to the flyer instead of creating an internal Tier 2 escalation, which violates the escalation policy.
-3. Expected handling: the agent should have created an internal escalation to Tier 2, who would then escalate to Tier 3 / Dev if backend verification was required.
-4. Customer impact: the flyer was incorrectly burdened with the responsibility of initiating a resolution process that should have been handled internally.
-
-**In the finding object:**
-- ruleName: "Incorrect Escalation Process"
-- description: State the exact agent message where the flyer was instructed to call support.
-- explanation: Explain the policy violation, include the direct quote as evidence, and state the correct escalation path (Tier 1 Agent → Tier 2 → Tier 3 / Dev).
-- status: "Fail"
-
-**Anti-false-positive rules:**
-- Do NOT fail if the issue was fully resolved at Tier 1 level without requiring escalation.
-- Do NOT fail if the agent directed the flyer to a third-party booking partner (not Corendon call support) for a third-party booking issue — this is correct behaviour per booking source policy.
-- Do NOT fail if call support was mentioned only as an optional additional contact method alongside a completed internal escalation.
-- Do NOT fail if the conversation contains no scenario requiring internal escalation.
-- Only fail when there is DIRECT, UNAMBIGUOUS evidence that the agent used call support as the resolution path instead of creating an internal escalation.
-
----
-### 21. AGENT ALIAS POLICY (APPLIES TO EVERY CONVERSATION — MANDATORY)
-This rule is MANDATORY and must be evaluated on EVERY conversation regardless of category.
-
-**Policy:** Agents must NEVER reveal or use their real/original name when assisting a flyer. Agents must use ONLY their assigned support alias throughout the entire conversation.
-
-**How to evaluate:**
-- Identify the name the agent uses to introduce themselves or sign off in the conversation (e.g., "My name is [Name]", "This is [Name]", "- [Name]", "Kind regards, [Name]").
-- Cross-reference this name against any system-provided agent identifier visible in the chat (e.g., chat header, agent label, system metadata).
-- If the agent's introduction/sign-off name MATCHES the system-displayed real name AND that name is clearly a real personal name (not an alias), this is a violation.
-- If the agent uses a clearly assigned alias (e.g., a single word, a codename, or a name that differs from the system real name), this is PASS.
-- If there is NO system-provided real name visible in the conversation to compare against, do NOT fail — you cannot determine a violation without evidence of the real name.
-
-**PASS condition:** Agent used only their alias, OR no real name is identifiable in the conversation → finding status = "Pass".
-**FAIL condition:** Agent introduced themselves or signed off using their real/original name instead of their assigned alias → finding status = "Fail", ruleName = "Alias Name Violation", severity = MAJOR.
-
-**Report requirements on FAIL:**
-- ruleName: "Alias Name Violation"
-- description: State the exact name the agent used and where in the conversation it appeared.
-- explanation: Explain that agents are required to use only their assigned support alias and must never reveal their real name to flyers. Include the exact chat evidence (quote the message).
-- status: "Fail"
-
-**Anti-false-positive rules:**
-- Do NOT fail if you cannot confirm the name used is the agent's real name — only fail when there is direct evidence (e.g., system label shows real name AND agent used that same name).
-- Do NOT fail if the agent's name appears only in a system-generated header or label that the agent did not write themselves.
-- A single-word name used as an alias (e.g., "Emma", "Koen", "Thomas") is acceptable unless the system explicitly identifies it as the agent's real name.
-
----
-### 22. INCORRECT FLYER IDENTIFICATION (APPLIES TO EVERY CONVERSATION — CRITICAL)
-This rule is MANDATORY and must be evaluated on EVERY conversation regardless of category.
-
-**Policy:** The agent must correctly identify and use the flyer's name throughout the conversation. Addressing the flyer with the wrong name is a Critical Error in customer communication.
-
-**How to evaluate:**
-- Identify the flyer's correct name from the conversation (from their own introduction, booking reference, system data, or how they sign their messages).
-- Scan every agent message for any instance where the agent addresses the flyer by name.
-- If the agent uses a name that does NOT match the flyer's actual name, this is a Critical violation.
-- A single incorrect name usage is sufficient to trigger this finding.
-
-**PASS condition:** Agent either did not address the flyer by name at all, OR used the correct name consistently → finding status = "Pass".
-**FAIL condition:** Agent addressed the flyer using an incorrect name (a name that does not belong to this flyer) → finding status = "Fail", ruleName = "Incorrect Flyer Identification", severity = CRITICAL.
-
-**Report requirements on FAIL — ALL four fields are MANDATORY:**
-1. The incorrect name the agent used (exact quote from the chat).
-2. The correct flyer name (as established from the conversation).
-3. The exact chat message where the incorrect name was used (full message text as evidence).
-4. An explanation of why this is a critical customer communication error — addressing a flyer by the wrong name creates confusion, damages trust, and indicates the agent was not paying attention to the customer's identity.
-
-**In the finding object:**
-- ruleName: "Incorrect Flyer Identification"
-- description: "Agent addressed the flyer as '[wrong name]' but the correct flyer name is '[correct name]'."
-- explanation: Include the exact message as evidence and explain the customer communication impact.
-- status: "Fail"
-
-**Anti-false-positive rules:**
-- Do NOT fail if the agent never used any name at all — absence of name usage is handled by §20 (Customer Addressing), not this rule.
-- Do NOT fail if the name discrepancy is a minor spelling variation of the same name (e.g., "Jon" vs "John") — only fail on clearly different names.
-- Do NOT fail if the flyer's name is ambiguous or never established in the conversation.
-- Only fail when you have DIRECT, UNAMBIGUOUS evidence that the agent used a name that belongs to a different person.
-
----
-### 25. CUSTOMER ISSUE IDENTIFICATION (APPLIES TO EVERY CONVERSATION — CRITICAL)
-This rule is MANDATORY and must be evaluated on EVERY conversation regardless of category.
-
-**Policy:** For EVERY conversation, the agent must correctly identify the customer's primary issue before providing any assistance. The agent must understand what the customer actually needs — not what the ticket category says — and respond to that specific issue.
-
-**Issue types to detect (not exhaustive):** Refund, Cancellation, Reschedule, Lost Baggage, Damaged Baggage, Promo Code, Check-in, Booking, Payment, Connecting Flight, Flight Delay, Compensation, Seat, Meal, Special Assistance, or any other customer request.
-
-**How to evaluate:**
-- **Step 1 — Identify the customer's PRIMARY issue** from their own words. Ignore the ticket category label. Find the actual problem based on what the customer explicitly states.
-- **Step 2 — Verify the agent's response addresses the correct issue.** If the agent responds to a different issue type than what the customer stated → Critical Error.
-- **Step 3 — Check consistency throughout the conversation.** If the agent drifts to a different issue or ignores the primary issue at any point → Critical Error.
-
-**PASS condition:** Agent correctly identified and responded to the customer's primary issue throughout the conversation → finding status = "Pass".
-**FAIL condition:** Agent misidentified, ignored, or addressed the wrong issue → finding status = "Fail", ruleName = "Incorrect Issue Identification", severity = CRITICAL.
-
-**Report requirements on FAIL — ALL five fields are MANDATORY:**
-1. The customer's actual primary issue (direct quote from the customer's own words).
-2. The issue the agent incorrectly identified or responded to (exact agent quote as evidence).
-3. The exact chat evidence showing the mismatch between what the customer asked and what the agent addressed.
-4. Explanation of the mismatch: why the agent's response does not address the customer's actual issue.
-5. Expected handling: what the agent should have done to correctly identify and address the customer's actual issue.
-
-**In the finding object:**
-- ruleName: "Incorrect Issue Identification"
-- description: "Customer's actual issue: '[customer's stated issue]'. Agent responded to: '[agent's interpreted issue]'."
-- explanation: Include the exact customer quote and agent quote as evidence, and explain the specific mismatch.
-- status: "Fail"
-
-**Anti-false-positive rules:**
-- Do NOT fail if the agent correctly identified the primary issue even if they also addressed secondary issues.
-- Do NOT fail if the agent asked a clarifying question to confirm the issue before responding — this is correct behaviour.
-- Do NOT fail if the issue identification was correct but the resolution was incomplete — that is a separate finding (resolution quality), not an issue identification failure.
-- Do NOT fail if the customer's issue evolved during the conversation and the agent adapted correctly.
-- Do NOT fail if there is genuine ambiguity about the customer's primary issue and the agent asked for clarification.
-- Only fail when there is DIRECT, UNAMBIGUOUS evidence that the agent responded to a completely different issue than what the customer stated.
-
----
-### 26. PROMO CODE HANDLING POLICY (APPLIES WHENEVER A PROMO CODE, VOUCHER, OR DISCOUNT CODE IS MENTIONED — MANDATORY)
-This rule activates whenever the conversation involves a promo code, voucher, discount code, or promotional offer. If no promo code is mentioned, mark this finding as "Not Applicable".
-
-**Policy:** The agent MUST verify the promo code source BEFORE providing any guidance. For Corendon-issued codes: collect required info and escalate to Tier 3 / Dev (L3) — never approve, deny, or confirm validity without Tier 3 verification. For third-party codes: direct the flyer to the issuing platform — never attempt to verify or apply the code.
-
-**How to evaluate:**
-- **Step 1 — Source Verification:** Did the agent ask where the flyer obtained the promo code (Corendon vs third-party) BEFORE giving any guidance? If NO → Major Error (Missing Mandatory Information).
-- **Step 2 — Corendon-issued code:** Did the agent avoid approving/denying/confirming validity without Tier 3 verification? Did the agent escalate to Tier 3 / Dev (L3)? If agent made any commitment without Tier 3 → Critical Error (Misleading Information / Unauthorized Commitment).
-- **Step 3 — Third-party code:** Did the agent direct the flyer to the issuing platform? Did the agent avoid attempting to verify or apply the code? If agent made any commitment about a third-party code → Critical Error.
-
-**PASS condition:** Source verified before guidance AND correct handling per source type (Corendon → escalated to Tier 3 without commitment; third-party → directed to issuing platform) → finding status = "Pass".
-**FAIL condition:** Agent provided guidance without verifying source, OR made unauthorized commitment about code validity/eligibility, OR failed to escalate Corendon-issued code to Tier 3, OR attempted to verify/apply a third-party code → finding status = "Fail".
-
-**Anti-false-positive rules:**
-- Do NOT apply this rule if no promo code, voucher, or discount code is mentioned in the conversation.
-- Do NOT fail if the promo code is only mentioned in passing without the flyer requesting assistance with it.
-- Do NOT fail if the agent directed the flyer to a third-party booking partner for a third-party code — this is correct behaviour.
-
----
-### 20. MANDATORY CUSTOMER ADDRESSING CHECK (APPLIES TO EVERY CONVERSATION)
-This rule is MANDATORY and must be evaluated on EVERY conversation regardless of category.
-
-**Rule:** The agent MUST address the customer either by their **real name** (as provided in the conversation) OR by the term **"Flyer"** at least once during the interaction.
-
-**How to evaluate:**
-- Scan the entire agent side of the conversation.
-- Check whether the agent used the customer's actual name (e.g., "John", "Ms. Torres", "Mr. Smith") OR the word "Flyer" at any point.
-- A single correct usage anywhere in the conversation is sufficient to PASS this check.
-- Do NOT require the name to appear in every message — one instance is enough.
-
-**PASS condition:** Agent used the customer's name OR "Flyer" at least once → finding status = "Pass".
-**FAIL condition:** Agent never addressed the customer by name or as "Flyer" throughout the entire conversation → finding status = "Fail", severity = MINOR, ruleName = "Customer Addressing".
-
-**Important anti-false-positive rules for this check:**
-- If the customer's name is not mentioned anywhere in the conversation (neither by the customer nor in any system context), do NOT fail the agent for not using a name they could not have known. In this case, check only whether "Flyer" was used.
-- Generic terms like "sir", "ma'am", "dear customer", "you" do NOT satisfy this requirement.
-- This is a MINOR severity finding — it does NOT affect the overall QA Pass/Fail verdict on its own unless combined with other failures.
-- Do NOT fail the overall interaction solely because of this rule. Record it as a finding but keep the overall status consistent with the other findings.
-
----
-### 23. PROMO CODE HANDLING POLICY (APPLIES WHEN A PROMO CODE, VOUCHER, OR DISCOUNT CODE IS MENTIONED)
-This rule activates ONLY when the conversation explicitly involves a promo code, voucher, discount code, or promotional offer that the flyer is requesting assistance with. Do NOT apply this rule if no promo code is mentioned.
-
-**Step 1 — Verify the Promo Code Source (MANDATORY first step)**
-The agent must first determine where the flyer obtained the promo code before providing any guidance:
-- Was it issued by Corendon Airlines directly (Corendon website, app, email campaign, or official Corendon promotion)?
-- Or was it issued by a third-party platform (travel agency, OTA, booking partner, or external website)?
-
-FAIL condition: Agent provides any guidance about the promo code without first verifying its source → ruleName = "Promo Code Source Not Verified", classification = Missing Mandatory Information, severity = MAJOR.
-
-**Step 2 — If the Promo Code Was Issued by Corendon Airlines:**
-- The agent must NOT approve, deny, confirm validity, or make any commitment about the promo code.
-- The agent MUST escalate the case to Tier 3 Support for verification.
-- Before escalating, collect: booking reference (if available), registered email, the promo code, screenshot of error (if applicable), description of the issue.
-
-FAIL conditions:
-- Agent approves or denies the promo code without Tier 3 verification → ruleName = "Unauthorized Promo Code Commitment", severity = CRITICAL.
-- Agent confirms the promo code is valid or invalid without verification → severity = CRITICAL.
-- Agent fails to escalate a Corendon-issued promo code case to Tier 3 → ruleName = "Promo Code Escalation Failure", severity = MAJOR.
-
-**Step 3 — If the Promo Code Was Issued by a Third-Party Platform:**
-- The agent must advise the flyer to contact the platform that issued the promo code directly.
-- The agent must NOT attempt to verify, apply, or override the third-party promo code.
-
-FAIL conditions:
-- Agent attempts to verify or apply a third-party promo code → severity = CRITICAL.
-- Agent fails to direct the flyer to the issuing platform → severity = MAJOR.
-- Agent makes any commitment about the third-party promo code → severity = CRITICAL.
-
-**Anti-false-positive rules:**
-- Only activate this rule when the flyer is actively requesting help with a promo code.
-- Do NOT fail if the promo code source was already clearly established from context before the agent responded.
-- Do NOT fail if the agent correctly identified the source and followed the correct path for that source.
-
----
-## LOGICAL CONSISTENCY ENFORCEMENT (CRITICAL — DO NOT VIOLATE)
-Your findings and your final verdict MUST be logically aligned. Apply these rules strictly:
-
-1. **If ANY finding has status "Fail"** → qaConclusion.status MUST be "QA Failed" and top-level status MUST be "Failed" or "Warning". It is LOGICALLY IMPOSSIBLE for status to be "Passed" when any finding is "Fail".
-2. **If ALL findings have status "Pass"** → qaConclusion.status MUST be "QA Passed" and top-level status MUST be "Passed". qaScore MUST be 85 or above. It is LOGICALLY IMPOSSIBLE for status to be "Failed" when all findings are "Pass".
-3. **"Could have" or "should have" does NOT automatically mean FAIL.** First evaluate whether the SOP REQUIRES the action for this scenario. If it is optional or best-practice only → finding status is "Pass" with an observation note. Only mark as "Fail" if the SOP explicitly mandates the action AND there is evidence of customer harm.
-4. **Not collecting a booking reference (PNR)** is ONLY a failure if the SOP EXPLICITLY requires PNR collection for this specific issue type AND the agent was at a stage where it was needed. Do NOT auto-fail for missing PNR.
-5. **qaFinding must reflect reality.** If no genuine SOP violations were found, you MUST write "No QA Error Found". Do NOT fabricate or force issues to justify a failure.
-6. **qaScore must be consistent with findings.** 0 Fail findings → qaScore 85-100. 1 Fail finding → qaScore max 80. 2+ Fail findings → qaScore max 65.
-7. **Do NOT contradict yourself.** If your finding explanation describes correct agent behavior, the finding status MUST be "Pass", not "Fail". Always re-read your own explanation before setting the status.
-8. **NEVER force a failure.** If you cannot identify a clear, evidence-based, SOP-mandated violation with direct chat evidence, the verdict MUST be PASS. When in doubt → PASS.
+## Compact Policy Reference
+- Rule 13 escalation: never tell the flyer to call external support; use internal escalation only unless the issue is third-party booking guidance.
+- Rule 3 alias: fail only if the system shows the agent's own real name and the chat uses that same name in self-introduction, sign-off, or direct self-reference. Mentions of other names, nationalities, regions, or customer names are not alias violations.
+- Rule 2 flyer name: fail only when the agent uses a clearly different customer name.
+- Rules 1 and 15: identify the primary issue before giving guidance; clarifying questions are allowed.
+- Promo code handling: if a promo code is mentioned, verify source before guidance; Corendon-issued promo codes require Tier 3 escalation, third-party codes go back to the issuer.
+- Rule 4 addressing: using the customer name or "Flyer" once is sufficient; no standalone fail.
+- Cancellation contradiction: if the agent first says refund or rebooking is automatic, then later says the customer must use the cancellation email to choose between refund or rebooking, treat that as contradictory guidance and a policy failure. The agent must stay consistent about whether action is required.
+- Cancellation contradiction: if the agent first says refund or rebooking is automatic, then later says the cancellation email gives the customer a choice between refund or rebooking, mark it as a contradictory-information failure unless the earlier statement is clearly corrected immediately.
 
 ---
 ## Special Cases — Expert QA Standards
-* If the conversation has no errors, return the JSON with "status": "Passed", "qaScore" between 90-100, "qaFinding": "No QA Error Found", and findings with status "Pass" explaining what the agent did correctly and which SOP rules were followed.
-* If only minor observations exist (not SOP violations), set "status": "Passed", "qaScore" between 85-95, and include observations as informational notes — NOT as failures.
-* NEVER force a "Failed" or "Warning" status when no genuine SOP violation with direct evidence exists.
-* For PASS findings: Explicitly state which SOP rule was followed and cite the agent's correct action as evidence.
-* For NO ISSUES findings: Explain what the agent did correctly, reference the applicable SOP, and confirm that no misleading or unsupported information was provided.
+* If no errors found: "status": "Passed", "qaScore" 90-100, "qaFinding": "No QA Error Found"
+* If minor observations only: "status": "Passed", "qaScore" 85-95
+* Never force "Failed" when no genuine SOP violation exists
+* For PASS findings: State which SOP rule was followed
+* For NO ISSUES: Explain what agent did correctly, reference SOP, confirm no misleading info
 
----
+## Logical Consistency
+- Fail → qaConclusion.status = "QA Failed", top-level status = "Failed" or "Warning"
+- All Pass → qaConclusion.status = "QA Passed", status = "Passed", qaScore >= 85
+- When in doubt, PASS
+
 ## Output Requirements
-Return ONLY structured JSON matching the provided schema. Do not return Markdown. Do not include any text, reasoning blocks, or explanations outside the JSON response.
+Return ONLY JSON matching schema. No Markdown outside JSON.
 
----
-## Critical Chat Logs Extraction Rules (LIMIT: MAXIMUM 4 PAIRS / 8 MESSAGES)
-When populating the "criticalChatLogs" array in the JSON output, you MUST follow these strict boundaries:
-1. **LIMIT OF 4 PAIRS:** You can return up to 4 exchanges (maximum 8 messages total). Do NOT exceed this limit.
-2. **HUNT FOR THE SENSITIVE ERROR:** Do not blindly copy from the beginning of the chat. You must scan the chat, find the exact moment the agent made a mistake (or provided critical info), and ONLY extract those sensitive exchanges.
-3. **STRICTLY NO FULL CHAT DUMPS:** Never include the entire conversation.
-4. **DO NOT INCLUDE NOISE:** Exclude greetings, closing remarks, holding messages, and unrelated pleasantries.
-5. **EVIDENCE ONLY:** Include only the customer intent, the agent's failing/critical response, and the customer's reaction to it.
-6. **USE REAL NAMES:** When defining the "speaker", you MUST use the actual real name of the person speaking from the chat (e.g., "Dennis (Agent)" or "Makayla Mendoza (Customer)"). DO NOT use generic dummy labels like "Agent" or "Customer" alone.
-7. Every chat log included MUST answer: "Does this message directly prove the QA finding?" If NO, exclude it.
-
-Example of GOOD extraction:
-Customer: "I've already tried Manage My Booking. It isn't working."
-Agent: "Please use Manage My Booking to reschedule."
-Customer: "Can you reschedule it for me?"
-Agent: "I don't have the required access. Please contact call support."
+## Critical Chat Logs (MAX 4 PAIRS / 8 MESSAGES)
+1. LIMIT: 4 exchanges maximum
+2. Hunt for sensitive error moment only
+3. No full chat dumps
+4. Exclude noise: greetings, closings, holding messages
+5. Evidence only: customer intent, agent response, customer reaction
+6. USE REAL NAMES: "Dennis (Agent)" or "Makayla Mendoza (Customer)" — NOT "Agent"/"Customer"
+7. Every log must answer: "Does this prove the finding?" If NO, exclude it
 
 ## AI Prompt Studio (Dynamic Context)
 The following are critical instructions and examples provided by the admin. These instructions take precedence over general analysis rules.
@@ -759,12 +553,17 @@ const buildCompressedSystemPromptForR1 = (projectCards, detectedCategory) => {
 
   const errorTypesString = errorTypesContext.length > 0
     ? errorTypesContext.map(et => `${et.name}: ${et.description}`).join('; ')
-    : 'AHT: Agent took too long; MISLEADING: False info; CRITICAL: Severe violation';
+    : 'AHT: late response; MISLEADING: false info; CRITICAL: severe violation';
 
-  // Build compact category context
+  const compactRules = (corendonRules.rules || []).map((rule) => {
+    const title = rule.title || rule.name || rule.id || 'rule';
+    const summary = (rule.description || rule.policy || rule.requirement || '').replace(/\s+/g, ' ').trim();
+    return summary ? `${title}: ${summary}` : title;
+  }).join(' | ');
+
   let categoryContextString = '';
   if (promptContext.globalInstructions !== undefined) {
-    categoryContextString = promptContext.globalInstructions || '';
+    categoryContextString = (promptContext.globalInstructions || '').replace(/\s+/g, ' ').trim();
   } else {
     categoryContextString = Object.entries(promptContext).map(([category, data]) => {
       if (category === '_GlobalExample') return '';
@@ -772,20 +571,19 @@ const buildCompressedSystemPromptForR1 = (projectCards, detectedCategory) => {
       if (detectedCategory && detectedCategory !== 'Auto-Detect' && detectedCategory !== 'Other' && detectedCategory !== 'Random (Any Issue)') {
         if (category !== detectedCategory) return '';
       }
-      let str = `[${category}] `;
-      if (data.globalInstructions) str += data.globalInstructions;
+      let str = `${category}: `;
+      if (data.globalInstructions) str += data.globalInstructions.replace(/\s+/g, ' ').trim();
       return str;
-    }).filter(s => s).join('\n');
+    }).filter(s => s).join(' | ');
   }
 
-  // Aggressive truncation for R1 token limits
-  if (categoryContextString.length > 800) {
-    categoryContextString = categoryContextString.substring(0, 800) + '...[TRUNCATED]';
+  if (categoryContextString.length > 300) {
+    categoryContextString = categoryContextString.substring(0, 300) + '...[TRUNCATED]';
   }
 
-  let rulesString = JSON.stringify(corendonRules);
-  if (rulesString.length > 2000) {
-    rulesString = rulesString.substring(0, 2000) + '...[TRUNCATED]}';
+  let rulesString = compactRules;
+  if (rulesString.length > 700) {
+    rulesString = rulesString.substring(0, 700) + '...[TRUNCATED]';
   }
 
   // Build output schema (same structure, compact formatting)
@@ -814,126 +612,42 @@ const buildCompressedSystemPromptForR1 = (projectCards, detectedCategory) => {
   } : null;
 
   const outputSchema = dynamicFindingSchema
-    ? `{"qaScore":<0-100>,"status":"<Passed|Warning|Failed>","misleadingPercentage":<0-100>,"petitionId":"<PET ID or null>","agentName":"<name or null>","errorType":"<type>","overallRecommendation":"<summary>","findings":[${JSON.stringify(dynamicFindingSchema)}]}`
-    : `{"qaScore":<0-100>,"status":"<Passed|Warning|Failed>","misleadingPercentage":<0-100>,"petitionId":"<PET ID or null>","agentName":"<name or null>","errorType":"<error category>","overallRecommendation":"<1-2 sentence summary>","qaFinding":"<main finding or 'No QA Error Found'>","criticalChatLogs":[{"speaker":"<REAL NAME (Role)>","message":"<exact text>"}],"findings":[{"ruleName":"<rule>","description":"<what agent did>","status":"<Pass|Fail|Not Applicable>","explanation":"<why; for Fail: cite SOP AND include exact chat quote as evidence>","evidence":["<exact agent quote — REQUIRED when Fail, omit otherwise>"]}],"expectedAgentAction":["<action>"],"agentAction":"<what agent actually did>","missingExpectedAction":"<what was missing or None>","ahtAnalysis":{"result":"<result>","timeline":["<HH:MM→HH:MM>"],"observation":"<obs>"},"reason":"<ONLY agent mistakes and violations — 50-90 words. If all Pass: 'No policy violations, misleading guidance, or critical errors were detected.' Do NOT praise the agent or mention correct actions.>","qaConclusion":{"status":"<QA Passed|QA Failed>","misleading":"<Yes|No>","severity":"<None|Low|Medium|High|Critical>","observations":["<obs>"],"decision":"<verdict>"}}`;
+    ? `{"qaScore":0-100,"status":"Passed|Warning|Failed","misleadingPercentage":0-100,"petitionId":"PET ID or null","agentName":"name or null","errorType":"type","overallRecommendation":"summary","findings":[${JSON.stringify(dynamicFindingSchema)}]}`
+    : `{"qaScore":0-100,"status":"Passed|Warning|Failed","misleadingPercentage":0-100,"petitionId":"PET ID or null","agentName":"name or null","customerName":"customer full name or null","customerIssue":"primary issue","issueCategory":"category","errorType":"error category","overallRecommendation":"summary","qaFinding":"No QA Error Found or main finding","applicableSop":"primary SOP rule","failureCondition":"specific failure or None","rootCause":"root cause or None","criticalChatLogs":[{"speaker":"REAL NAME (Role)","message":"exact text"}],"findings":[{"ruleName":"rule","description":"what agent did","status":"Pass|Fail|Not Applicable","explanation":"why","evidence":["quote"]}],"expectedAgentAction":["action"],"agentAction":"what agent did","missingExpectedAction":"what was missing or None" ,"ahtAnalysis":{"result":"result","timeline":["HH:MM→HH:MM"],"observation":"obs"},"reason":"80-140 words, one natural paragraph, professional human QA language, focused on the specific violations, policy reference, evidence, and customer impact; do not sound robotic","qaConclusion":{"status":"QA Passed|QA Failed","misleading":"Yes|No","severity":"None|Low|Moderate|High|Critical","observations":["obs"],"decision":"verdict"}}`;
 
   const bookingSourceNote = ['Booking', 'Cancellation', 'Reschedule', 'Refund'].includes(detectedCategory)
     ? `\nBOOKING SOURCE: For ${detectedCategory} queries, check if agent verified booking source (direct vs third-party) per SOP. Only fail if SOP requires it AND agent skipped it AND it led to incorrect guidance.`
     : '';
 
-  return `# Corendon Airlines QA Engine — Expert Policy-Based Analysis
+  return `# DeepSeek-R1 QA Prompt
+Role: senior QA analyst. Stay evidence-based, conversation-specific, and JSON-only.
 
-## Role
-You are a **Senior Quality Assurance Analyst with 10+ years of experience** in customer support QA. Your expertise is in policy-based analysis, not generic summarization. Every finding must be conversation-specific and derived from actual agent behavior compared against the SOP.
+Rules: evaluate the 20 mandatory rules, but keep output compact. Use Pass/Not Applicable when compliant. Use Fail only with direct evidence.
 
-## Escalation Hierarchy (MANDATORY — apply to every conversation)
-- **Tier 1 Agent (L1)**: Front-line agent. Can only escalate internally to Tier 2.
-- **Tier 2 (L2)**: Supervisor. Can only escalate internally to Tier 3 / Dev.
-- **Tier 3 / Dev (L3)**: Backend / Development / Finance / Reservations team. Handles verification, backend actions, and final resolution.
-- The agent must NEVER instruct the flyer to call external support as a substitute for internal escalation.
+DeepSeek focus: false commitments, misleading assistance, incorrect escalation, alias/name issues, wrong issue identification, and hallucinated info are the highest-risk checks. For baggage, prioritize PIR/return-to-airport/transfer guidance and booking-source verification.
 
-## Expert QA Principles
-- Never generate generic observations that could apply to any conversation.
-- Every finding must be conversation-specific and policy-justified.
-- Compare agent actions against the expected SOP before producing any conclusion.
-- Explain WHY the action violates or complies with the policy.
-- Reference exact customer and agent messages that support the finding.
-- If no policy violation exists, explicitly state that the agent followed the required SOP.
-- Never invent violations or use template responses.
-- Think like an experienced QA auditor: understand customer intent, detect SOP violations, validate policy, avoid false positives, select concise logs, explain impact, generate evidence-based findings.
+Cancellation contradiction: if the agent says refund or rebooking is automatic and later says the customer must use the cancellation email to choose between refund or rebooking, treat that as a failure unless the agent explicitly corrects the earlier statement in the same exchange.
 
-## 8-Point Finding Structure (Expert QA Analysis)
-For every finding, include:
-1. **Expected SOP/Policy** - Cite the specific rule (e.g., "Per Cancellation SOP §2.1...")
-2. **Actual Agent Action** - What the agent actually did (direct evidence only)
-3. **Evidence** - Exact agent message(s) proving the finding
-4. **Policy Comparison** - Does the action comply, partially comply, or violate the SOP?
-5. **Customer Impact** - How was the customer affected? (specific, not generic)
-6. **QA Risk** - Business risk (compliance, escalation, complaint, compensation)
-7. **Severity Justification** - WHY this severity was assigned
-8. **Recommended Correct Action** - What the agent should have done
+Conversation limits: use max 4 chat pairs, avoid noise, and cite only the exact messages proving the finding.
 
-## Reason Field (Expert QA Standards)
-- MUST contain ONLY agent mistakes and policy violations with SOP references
-- Do NOT praise the agent or mention correct actions
-- If all findings are Pass: "No policy violations, misleading guidance, or critical errors were detected."
-- If issues exist: State the specific policy violation, cite the SOP rule, include exact chat quote, explain customer impact
-- 50-90 words, professional QA language, conversation-specific (never generic)
+Reason style: write the reason like a real senior auditor would. Use a natural, fluent paragraph, not shorthand. Explain the violation, the exact policy issue, the concrete evidence, and the customer impact. If there are multiple violations, connect them cleanly in one paragraph.
 
-## CRITICAL: Accuracy Rules
-0. VERIFICATION-FIRST: Ask "Did the agent actually verify the customer's situation before answering?" If NO → Critical Failure. If YES → Continue.
-1. DEFAULT IS PASS. Only fail with: exact SOP violation + direct chat evidence + real customer harm.
-2. Never invent requirements. If SOP doesn't EXPLICITLY require an action for THIS scenario → PASS.
-3. No false positives. Sufficient response = PASS even if not perfect. When in doubt → PASS.
-4. Escalation is valid resolution. Partial info is NOT failure unless SOP mandates it AND it caused harm.
-5. Before ANY Fail, verify ALL: (a) which SOP rule applies, (b) agent actually deviated, (c) direct unambiguous evidence, (d) customer was harmed/misled, (e) would a human QA auditor also fail this? If any check fails → PASS.
-6. PROHIBITED false-positive patterns: "Failed to collect PNR" (unless SOP requires for THIS issue), "Incomplete info gathering" (unless you name the specific missing field + SOP rule), "Generic/insufficient response" (if factually correct → PASS).
+Global rules: ${rulesString}
 
-## Consistency (MANDATORY — Expert QA Audit)
-- Any FAIL finding → status="Failed"/"Warning", qaConclusion.status="QA Failed"
-- ALL PASS findings → status="Passed", qaScore 85-100, qaConclusion.status="QA Passed"
-- Score: 0 Fails→85-100. 1 Fail→max 80. 2+ Fails→max 65.
-- Never contradict yourself. If explanation shows correct behavior → status must be Pass.
-- If no genuine SOP violations → qaFinding MUST be "No QA Error Found"
-- Every finding must include the 8-point structure
-- Every reason must cite the specific SOP and include exact chat evidence
-- Every finding must be conversation-specific, not a template
+${categoryContextString ? `Category context: ${categoryContextString}
+` : ''}Error types: ${errorTypesString}
 
-## Analysis Steps
-1. Find REAL issue (not ticket category) → Did agent understand it? → Was verification required?
-2. Find applicable SOP rules from JSON
-3. Compare agent's actual actions vs SOP requirements
-4. Generate findings with DIRECT evidence only
-5. Contradiction Check: E.g., "I cannot access" followed by "I checked your booking" = CRITICAL FAIL.
-6. Misleading Check: Fails if agent says "You will receive", "You are eligible", "You cannot", etc. without verification.
-7. Validate agent's policy statements against official policy
-8. Classify resolution: Resolved/Partially Resolved/Not Resolved
-9. Explain customer impact specifically (not generic)
 ${bookingSourceNote}
 
-## Chat Logs: Max 4 pairs (8 msgs). Only error evidence. Use REAL speaker names from chat. No greetings/closings/noise.
+Output schema: ${outputSchema}`;
+};
 
-${categoryContextString ? `## Policy Context\n${categoryContextString}\n` : ''}
-## Error Types: ${errorTypesString}
-
-## Rules JSON
-${rulesString}
-
-## GOLDEN RULE (Expert QA Audit Checklist)
-1. Did the agent identify the actual issue?
-2. Did the agent verify all required information before answering?
-3. Did the agent provide any unverified commitments or guarantees?
-4. Did the agent contradict their own limitations?
-5. Would a reasonable customer leave with incorrect expectations?
-6. Did the agent address the customer by their real name OR as "Flyer" at least once? If NO → add a MINOR finding "Customer Addressing" (status: Fail). This does NOT change overall Pass/Fail on its own.
-7. If baggage is lost/missing/damaged: Did the agent cover ALL 6 mandatory PIR/connection guidance points? Any missing point = CRITICAL finding "Missing Mandatory Baggage Guidance".
-8. Did the agent introduce themselves or sign off using their real name instead of their assigned alias? If YES and there is direct evidence (system label matches the name used) → MAJOR finding "Alias Name Violation" with exact chat evidence.
-9. Did the agent address the flyer by the WRONG name at any point? If YES → CRITICAL finding "Incorrect Flyer Identification". Report: wrong name used, correct flyer name, exact message as evidence, and explanation of the communication error.
-10. Did the agent instruct the flyer to call customer support or a call centre instead of creating an internal escalation (Tier 2 / Tier 3)? If YES → CRITICAL finding "Incorrect Escalation Process". Report: exact agent message as evidence, explanation that internal escalation responsibility must never be transferred to the flyer, and the correct escalation path (Tier 1 Agent → Tier 2 → Tier 3 / Dev). Do NOT fail if the issue was resolved at Tier 1, if the agent directed to a third-party booking partner for a third-party booking, or if call support was only mentioned as an optional additional contact alongside a completed internal escalation.
-11. Did the agent use the CORRECT customer name throughout the conversation? Identify the customer's correct name from their own words, booking reference, or system metadata. If the agent addressed the customer by a name that does NOT belong to them → CRITICAL finding "Incorrect Customer Identification". Report: correct customer name, incorrect name used by agent, exact message as evidence, explanation that using the wrong name is a Critical customer identification error. Do NOT fail if the agent never used any name, if the discrepancy is a minor spelling variation, or if the customer's name was never established.
-12. Did the agent correctly identify the customer's PRIMARY issue before providing assistance? Identify the customer's actual issue from their own words (Refund / Cancellation / Reschedule / Lost Baggage / Damaged Baggage / Promo Code / Check-in / Booking / Payment / Connecting Flight / Flight Delay / Compensation / Seat / Meal / Special Assistance / Other). If the agent responded to a DIFFERENT issue than what the customer stated, or ignored the primary issue → CRITICAL finding "Incorrect Issue Identification". Report: customer's actual issue (direct quote), agent's interpreted issue (agent quote), exact mismatch evidence, and expected handling. Do NOT fail if the agent asked a clarifying question, if issue identification was correct but resolution was incomplete, or if the customer's issue evolved and the agent adapted correctly.
-13. If the conversation mentions a promo code, voucher, or discount code: Did the agent verify the source (Corendon vs third-party) BEFORE providing any guidance? If NO → MAJOR finding "Missing Promo Code Source Verification". If Corendon-issued: did the agent avoid making any commitment about validity/eligibility without Tier 3 / Dev (L3) verification AND escalate to Tier 3? If agent made a commitment without Tier 3 → CRITICAL finding "Unauthorized Promo Code Commitment". If third-party: did the agent direct the flyer to the issuing platform without attempting to verify or apply the code? If agent attempted to verify/apply → CRITICAL finding "Unauthorized Promo Code Action". Do NOT apply if no promo code is mentioned in the conversation.
-
-If ANY answer is YES (to 3, 4, 5, 8, 9, 10, 11, 12, 13) or NO (to 1, 2) → QA Finding is FAIL with chat evidence. Every finding must be conversation-specific and policy-justified.
-
-## REASON FIELD — MANDATORY RULES
-- The "reason" field MUST contain ONLY agent mistakes, policy violations, critical errors, misleading guidance, missing mandatory verification, missing escalation, incorrect information, SOP violations, or incorrect flyer identification.
-- Do NOT praise the agent. Do NOT mention what the agent did correctly. Do NOT include positive summaries.
-- Start directly with the agent's mistake or violation — NOT with the customer's issue.
-- If ALL findings are Pass → reason MUST be exactly: "No policy violations, misleading guidance, or critical errors were detected."
-- Keep 50-90 words, one paragraph, professional QA language.
-
-## FINDINGS FIELD — Expert QA Standards
-- Every finding MUST have: ruleName, description, status (Pass | Fail | Not Applicable), explanation.
-- When status is Fail: explanation MUST include the exact chat quote as evidence AND explain why it violates the specific rule.
-- When status is Pass: confirm the rule was verified and complied with, cite the SOP, explain the correct agent action.
-- When status is Not Applicable: use this ONLY when the rule genuinely does not apply to this conversation.
-- Every Fail finding MUST also include an "evidence" array with the exact agent message(s) proving the violation.
-- For PASS findings: Include the SOP reference and the agent's correct action as evidence of compliance.
-
-## OUTPUT: Return ONLY valid JSON (no markdown, no reasoning text, no \`\`\`)
-Every finding must include the 8-point structure. Every reason must cite the specific SOP. Every conclusion must be evidence-based and policy-justified.
-${outputSchema}`;
+const buildCompressedSystemPromptForMini = (projectCards, detectedCategory) => {
+  const prompt = buildCompressedSystemPromptForR1(projectCards, detectedCategory);
+  return prompt
+    .replace('# DeepSeek-R1 QA Prompt', '# GPT-4o-mini QA Prompt')
+    .replace('Reason style: write the reason like a real senior auditor would. Use a natural, fluent paragraph, not shorthand. Explain the violation, the exact policy issue, the concrete evidence, and the customer impact. If there are multiple violations, connect them cleanly in one paragraph.', 'Reason style: write a natural, fluent paragraph that sounds like a real QA reviewer. Keep it detailed but readable, and clearly explain the violation, policy issue, evidence, and customer impact.')
+    .replace('"reason":"80-140 words, one natural paragraph, professional human QA language, focused on the specific violations, policy reference, evidence, and customer impact; do not sound robotic"', '"reason":"100-160 words, one natural paragraph, professional human QA language, focused on the specific violations, policy reference, evidence, and customer impact; sound like a real auditor and avoid robotic phrasing"');
 };
 
 const detectChatCategory = (conversationText) => {
@@ -1007,41 +721,25 @@ const detectChatCategory = (conversationText) => {
 
 const cleanChatTranscript = (rawText) => {
   if (!rawText) return rawText;
-  
   let cleaned = rawText;
-  
-  // 1. Remove exact Date & Time line entirely
   cleaned = cleaned.replace(/^\d{1,2}\s+[A-Za-z]{3},\s+\d{2}:\d{2}\s+[ap]m\s+IST\r?\n?/gm, '');
-  
-  // 1b. Remove [hh:mm am/pm] timestamps if they are already compressed in the UI
   cleaned = cleaned.replace(/^\[\d{2}:\d{2}\s+[ap]m\]\s*/gm, '');
-  
-  // 2. Remove "about X hours/minutes ago"
   cleaned = cleaned.replace(/^(about\s+)?\d+\s+(minute|hour)s?\s+ago\r?\n?/gm, '');
-  
-  // 3. Remove stray single-letter initials on their own line
   cleaned = cleaned.replace(/^[A-Z]\r?\n/gm, '');
-  
-  // 4. Remove UI status events & noise
   cleaned = cleaned.replace(/^.*has accepted this query.*\s*/gm, '');
   cleaned = cleaned.replace(/^Your query has been escalated.*\s*/gm, '');
   cleaned = cleaned.replace(/^Transfer from.*accepted by.*\s*/gm, '');
-  cleaned = cleaned.replace(/^Reason:.*\s*/gm, '');
-  cleaned = cleaned.replace(/^Concern:.*\s*/gm, '');
-  cleaned = cleaned.replace(/^Steps Performed:.*\s*/gm, '');
-  cleaned = cleaned.replace(/^Reason for Escalation:.*\s*/gm, '');
-  
-  // 5. Remove standard boilerplate greetings & closings to save tokens
-  // NOTE: "my name is" is intentionally NOT stripped — it is required evidence for alias policy evaluation
+  cleaned = cleaned.replace(/^(Reason|Concern|Steps Performed|Reason for Escalation):.*\s*/gm, '');
   cleaned = cleaned.replace(/thank you for contacting.*?(\.|\!|\?)\s?/gi, '');
   cleaned = cleaned.replace(/welcome to.*?(\.|\!|\?)\s?/gi, '');
   cleaned = cleaned.replace(/is there anything else.*?(\.|\!|\?)\s?/gi, '');
   cleaned = cleaned.replace(/have a great (day|evening|night|weekend).*?(\.|\!|\?)\s?/gi, '');
-  cleaned = cleaned.replace(/(please wait while i|please hold on while i|allow me a moment|give me a moment).*?(\.|\!|\?)\s?/gi, '');
-
-  // 6. Remove multiple empty lines
+  cleaned = cleaned.replace(/(please wait|please hold|allow me|give me).*?(\.|\!|\?)\s?/gi, '');
+  cleaned = cleaned.replace(/i (am|will be|have been).*?(\.|\!|\?)\s?/gi, '');
+  cleaned = cleaned.replace(/looking forward to.*?(\.|\!|\?)\s?/gi, '');
+  cleaned = cleaned.replace(/appreciate your.*?(\.|\!|\?)\s?/gi, '');
+  cleaned = cleaned.replace(/best regards.*?(\.|\!|\?)\s?/gi, '');
   cleaned = cleaned.replace(/\n{2,}/g, '\n');
-  
   return cleaned.trim();
 };
 
@@ -1074,13 +772,17 @@ exports.analyzeChat = async (req, res) => {
     // Prevent 413 Token Limit Errors (e.g. GitHub Models 8k limit, DeepSeek R1 4k limit)
     let safeConversationText = cleanedConversationText;
     const isR1 = (aiModel || '').toLowerCase().includes('r1');
+    const isMini = (aiModel || '').toLowerCase().includes('gpt-4o-mini');
     const isGitHub = providerName.includes('GITHUB');
     const isGroq = providerName.includes('GROQ');
-    const restrictionLevel = isR1 ? 2 : ((isGitHub || isGroq) ? 1 : 0);
+    const isCerebras = providerName.includes('CEREBRAS');
+    const restrictionLevel = isR1 ? 2 : ((isMini || isGitHub || isGroq || isCerebras) ? 1 : 0);
     
     let MAX_CONV_CHARS = 45000;
-    if (restrictionLevel === 1) MAX_CONV_CHARS = 4000;
     if (restrictionLevel === 2) MAX_CONV_CHARS = 3500;
+    else if (isMini) MAX_CONV_CHARS = 3000;
+    else if (isCerebras) MAX_CONV_CHARS = 2500;
+    else if (restrictionLevel === 1) MAX_CONV_CHARS = 4000;
     
     if (safeConversationText.length > MAX_CONV_CHARS) {
       console.log(`Truncating conversation from ${safeConversationText.length} to ${MAX_CONV_CHARS} characters to respect token limits.`);
@@ -1092,21 +794,23 @@ exports.analyzeChat = async (req, res) => {
     const detectedCategory = detectChatCategory(safeConversationText);
     console.log(`Detected Category: ${detectedCategory}`);
     
-    // Use compressed prompt for DeepSeek R1 to fit within token limits, full prompt for everything else
+    // Use compressed prompts for token-limited models, full prompt for everything else
     const activeSystemPrompt = isR1
       ? buildCompressedSystemPromptForR1(projectCards, detectedCategory)
-      : buildSystemPrompt(projectCards, detectedCategory, restrictionLevel);
+      : (isMini
+        ? buildCompressedSystemPromptForMini(projectCards, detectedCategory)
+      : buildSystemPrompt(projectCards, detectedCategory, restrictionLevel));
 
-    // Build the analysis user message — compressed version for R1 to save tokens
-    const analysisUserMessage = isR1
+    // Build the analysis user message — compressed version for token-limited models to save tokens
+    const analysisUserMessage = (isR1 || isMini)
       ? `Analyze this chat as a Senior QA Analyst. Return ONLY valid JSON matching the schema. No markdown, no reasoning text.\n\n${safeConversationText}`
       : `Analyze this conversation as a Senior Quality Assurance Analyst with 10+ years of experience:\n\n${safeConversationText}\n\n**CRITICAL INSTRUCTION**: Perform a thorough step-by-step policy-based QA analysis of the conversation above. Strictly adhere to all rules in the JSON knowledge base. You must evaluate every applicable rule and provide detailed explanations. Check for: missing mandatory information gathering, repeated questions, AHT delays, misleading guidance, and unverified claims.\n\n**EXPERT QA STANDARDS**: Every finding must be conversation-specific and policy-justified. Never generate generic observations. Compare the agent's actions against the expected SOP before producing any conclusion. Explain WHY the action violates or complies with the policy. Reference the exact customer and agent messages that support the finding. If no policy violation exists, explicitly state that the agent followed the required SOP.\n\n**REASON FIELD REQUIREMENT**: The reason field must contain ONLY agent mistakes and policy violations with specific SOP references. Include exact chat evidence. Do NOT praise the agent or mention correct actions. If all findings are Pass, use: "No policy violations, misleading guidance, or critical errors were detected."\n\n**CRITICAL LIMIT**: You MUST extract a maximum of 4 pairs (up to 8 messages total) for your criticalChatLogs array, focusing ONLY on the exact moment the sensitive error occurred. Output your final response ONLY as a valid JSON object matching the requested schema exactly.`;
 
     // Debug: Log estimated token usage for R1
-    if (isR1) {
+    if (isR1 || isMini) {
       const totalChars = activeSystemPrompt.length + analysisUserMessage.length;
       const estimatedTokens = Math.ceil(totalChars / 4);
-      console.log(`[DeepSeek R1] System prompt: ${activeSystemPrompt.length} chars, User message: ${analysisUserMessage.length} chars, Total: ${totalChars} chars (~${estimatedTokens} tokens)`);
+      console.log(`[${isR1 ? 'DeepSeek R1' : 'gpt-4o-mini'}] System prompt: ${activeSystemPrompt.length} chars, User message: ${analysisUserMessage.length} chars, Total: ${totalChars} chars (~${estimatedTokens} tokens)`);
     }
     console.log(`Analyzing chat using ${providerName} (${aiModel})...`);
 
@@ -1128,48 +832,101 @@ exports.analyzeChat = async (req, res) => {
 
     if (providerName.includes('GROQ')) {
       const groq = getGroqClient(customKey);
-      const completion = await groq.chat.completions.create({
-        messages: [
-          { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: analysisUserMessage }
-        ],
-        model: aiModel || 'llama-3.3-70b-versatile',
-        temperature: 0,
-        response_format: { type: 'json_object' }
-      });
+      let retries = 0;
+      let completion;
+      while (retries < 2) {
+        try {
+          completion = await groq.chat.completions.create({
+            messages: [
+              { role: 'system', content: activeSystemPrompt },
+              { role: 'user', content: analysisUserMessage }
+            ],
+            model: aiModel || 'llama-3.3-70b-versatile',
+            temperature: 0,
+            response_format: { type: 'json_object' },
+            max_tokens: 2000
+          });
+          break;
+        } catch (err) {
+          retries++;
+          if (retries >= 2) throw err;
+          console.log(`Groq retry ${retries}...`);
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
       rawResponse = completion.choices[0].message.content;
     } 
     else if (providerName.includes('GEMINI') || providerName.includes('GOOGLE')) {
       const genAI = getGeminiClient(customKey);
+      const isFlash25 = (aiModel || 'gemini-2.5-flash').includes('2.5-flash');
       const model = genAI.getGenerativeModel({ 
         model: aiModel || 'gemini-2.5-flash',
-        generationConfig: { responseMimeType: 'application/json' }
+        generationConfig: {
+          responseMimeType: 'application/json',
+          ...(isFlash25 ? { thinkingConfig: { thinkingBudget: 0 } } : {})
+        }
       });
-      const result = await model.generateContent(`${activeSystemPrompt}\n\n${analysisUserMessage}`);
-      rawResponse = result.response.text();
+      let geminiResult;
+      try {
+        geminiResult = await model.generateContent(`${activeSystemPrompt}\n\n${analysisUserMessage}`);
+      } catch (geminiErr) {
+        if (geminiErr.status === 503) {
+          console.log('Gemini 503 — retrying in 10s...');
+          await new Promise(r => setTimeout(r, 10000));
+          geminiResult = await model.generateContent(`${activeSystemPrompt}\n\n${analysisUserMessage}`);
+        } else {
+          throw geminiErr;
+        }
+      }
+      rawResponse = geminiResult.response.text();
     }
     else if (providerName.includes('OPENAI')) {
       const openai = getOpenAiClient(customKey);
-      const completion = await openai.chat.completions.create({
-        messages: [
-          { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: analysisUserMessage }
-        ],
-        model: aiModel || 'gpt-4o',
-        temperature: 0,
-        response_format: { type: 'json_object' }
-      });
+      let retries = 0;
+      let completion;
+      while (retries < 2) {
+        try {
+          completion = await openai.chat.completions.create({
+            messages: [
+              { role: 'system', content: activeSystemPrompt },
+              { role: 'user', content: analysisUserMessage }
+            ],
+            model: aiModel || 'gpt-4o',
+            temperature: 0,
+            response_format: { type: 'json_object' },
+            max_tokens: 2000
+          });
+          break;
+        } catch (err) {
+          retries++;
+          if (retries >= 2) throw err;
+          console.log(`OpenAI retry ${retries}...`);
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
       rawResponse = completion.choices[0].message.content;
     }
     else if (providerName.includes('ANTHROPIC')) {
       const anthropic = getAnthropicClient(customKey);
-      const completion = await anthropic.messages.create({
-        model: aiModel || 'claude-3-5-sonnet-20241022',
-        max_tokens: 1500,
-        temperature: 0,
-        system: activeSystemPrompt,
-        messages: [{ role: 'user', content: analysisUserMessage }]
-      });
+      let retries = 0;
+      let completion;
+      while (retries < 2) {
+        try {
+          completion = await anthropic.messages.create({
+            model: aiModel || 'claude-3-5-sonnet-20241022',
+            max_tokens: 2000,
+            temperature: 0,
+            system: activeSystemPrompt,
+            messages: [{ role: 'user', content: analysisUserMessage }]
+          });
+          break;
+        } catch (err) {
+          retries++;
+          if (retries >= 2) throw err;
+          console.log(`Anthropic retry ${retries}...`);
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
       rawResponse = completion.content[0].text;
     }
     else if (providerName.includes('DEEPSEEK')) {
@@ -1177,15 +934,28 @@ exports.analyzeChat = async (req, res) => {
         apiKey: customKey || process.env.DEEPSEEK_API_KEY || 'no-key',
         baseURL: 'https://api.deepseek.com/v1' 
       });
-      const completion = await deepseek.chat.completions.create({
-        messages: [
-          { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: analysisUserMessage }
-        ],
-        model: aiModel || 'deepseek-chat',
-        temperature: 0,
-        response_format: { type: 'json_object' }
-      });
+      let retries = 0;
+      let completion;
+      while (retries < 2) {
+        try {
+          completion = await deepseek.chat.completions.create({
+            messages: [
+              { role: 'system', content: activeSystemPrompt },
+              { role: 'user', content: analysisUserMessage }
+            ],
+            model: aiModel || 'deepseek-chat',
+            temperature: 0,
+            response_format: { type: 'json_object' },
+            max_tokens: 2000
+          });
+          break;
+        } catch (err) {
+          retries++;
+          if (retries >= 2) throw err;
+          console.log(`DeepSeek retry ${retries}...`);
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
       rawResponse = completion.choices[0].message.content;
     }
     else if (providerName.includes('OLLAMA')) {
@@ -1200,7 +970,8 @@ exports.analyzeChat = async (req, res) => {
         ],
         model: aiModel || 'llama3:latest',
         temperature: 0,
-        response_format: { type: 'json_object' }
+        response_format: { type: 'json_object' },
+        max_tokens: 2000
       });
       rawResponse = completion.choices[0].message.content;
     }
@@ -1220,7 +991,7 @@ exports.analyzeChat = async (req, res) => {
         ],
         model: aiModel || 'meta-llama/llama-3.1-8b-instruct',
         temperature: 0,
-        max_tokens: restrictionLevel >= 1 ? 1500 : 3000,
+        max_tokens: 2000,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
@@ -1236,8 +1007,8 @@ exports.analyzeChat = async (req, res) => {
           { role: 'user', content: analysisUserMessage }
         ],
         model: aiModel || 'meta-llama/Llama-3.3-70B-Instruct',
-        temperature: 0.1,
-        max_tokens: 3000
+        temperature: 0,
+        max_tokens: 2000
       });
       rawResponse = completion.choices[0].message.content;
     }
@@ -1245,19 +1016,33 @@ exports.analyzeChat = async (req, res) => {
       const cerebras = new OpenAI({
         apiKey: customKey || process.env.CEREBRAS_API_KEY || 'no-key',
         baseURL: 'https://api.cerebras.ai/v1',
-        timeout: 45000
+        timeout: 60000
       });
-      const completion = await cerebras.chat.completions.create({
-        messages: [
-          { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: analysisUserMessage }
-        ],
-        model: aiModel || 'llama-3.3-70b',
-        temperature: 0,
-        max_tokens: 4000,
-        response_format: { type: 'json_object' }
-      });
-      rawResponse = completion.choices[0].message.content;
+      let retries = 0;
+      let completion;
+      while (retries < 2) {
+        try {
+          completion = await cerebras.chat.completions.create({
+            messages: [
+              { role: 'system', content: activeSystemPrompt },
+              { role: 'user', content: analysisUserMessage }
+            ],
+            model: aiModel || 'llama-3.3-70b',
+            temperature: 0,
+            max_tokens: 2000,
+            response_format: { type: 'json_object' }
+          });
+          if (completion && completion.choices && completion.choices[0] && completion.choices[0].message) {
+            rawResponse = completion.choices[0].message.content;
+          }
+          break;
+        } catch (err) {
+          retries++;
+          if (retries >= 2) throw err;
+          console.log(`Cerebras retry ${retries}...`);
+          await new Promise(r => setTimeout(r, 3000));
+        }
+      }
     }
     else if (providerName.includes('COHERE')) {
       const cohere = getCohereClient(customKey);
@@ -1266,6 +1051,7 @@ exports.analyzeChat = async (req, res) => {
         preamble: activeSystemPrompt,
         model: aiModel || 'command-a-plus-05-2026',
         temperature: 0,
+        max_tokens: 2000
       });
       rawResponse = completion.text;
     }
@@ -1274,14 +1060,18 @@ exports.analyzeChat = async (req, res) => {
         apiKey: customKey || process.env.GITHUB_API_KEY || 'no-key',
         baseURL: 'https://models.inference.ai.azure.com'
       });
+      const requestedGithubModel = (aiModel || 'gpt-4o-mini');
+      const normalizedGithubModel = requestedGithubModel.toLowerCase().includes('405b')
+        ? 'gpt-4o-mini'
+        : requestedGithubModel;
       const completion = await github.chat.completions.create({
         messages: [
           { role: 'system', content: activeSystemPrompt },
           { role: 'user', content: analysisUserMessage }
         ],
-        model: aiModel || 'gpt-4o',
+        model: normalizedGithubModel,
         temperature: 0,
-        max_tokens: restrictionLevel >= 1 ? 1500 : 3000,
+        max_tokens: 2000,
         response_format: { type: 'json_object' }
       });
       rawResponse = completion.choices[0].message.content;
@@ -1291,23 +1081,38 @@ exports.analyzeChat = async (req, res) => {
     }
 
     // Attempt to parse JSON (some models might still include markdown despite instructions)
+    if (!rawResponse) {
+      console.error('No response received from AI provider');
+      return res.status(500).json({ 
+        error: 'No response from AI provider',
+        details: 'The AI provider returned an empty response',
+        provider: providerName,
+        model: aiModel
+      });
+    }
     let cleanedResponse = rawResponse.trim();
     
     // Remove DeepSeek-R1 reasoning tags (even if truncated)
     cleanedResponse = cleanedResponse.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
 
+    // Remove markdown code blocks
     if (cleanedResponse.startsWith('```json')) {
       cleanedResponse = cleanedResponse.replace(/^```json\n?/, '').replace(/\n?```$/, '');
     } else if (cleanedResponse.startsWith('```')) {
       cleanedResponse = cleanedResponse.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '');
     }
     
+    // Sanitize bad Unicode escapes (Gemini-style fix)
+    cleanedResponse = cleanedResponse.replace(/\\u(?![0-9a-fA-F]{4})/g, 'u');
+    
+    // Remove trailing commas (common JSON error)
+    cleanedResponse = cleanedResponse.replace(/,\s*([}\]])/g, '$1');
+    
     let parsedJson;
     try {
       parsedJson = JSON.parse(cleanedResponse);
     } catch (err) {
       try {
-        // Fallback 1: Extract substring (for trailing markdown)
         const firstBrace = cleanedResponse.indexOf('{');
         const lastBrace = cleanedResponse.lastIndexOf('}');
         if (firstBrace !== -1 && lastBrace !== -1 && lastBrace >= firstBrace) {
@@ -1316,29 +1121,82 @@ exports.analyzeChat = async (req, res) => {
           throw err;
         }
       } catch (e2) {
-        // Fallback 2: Truncated JSON repair (for context limits)
         try {
           let repaired = cleanedResponse.trim();
+          const firstBrace = repaired.indexOf('{');
+          if (firstBrace === -1) throw new Error('No JSON object found');
+          repaired = repaired.substring(firstBrace);
+          
           let openBraces = 0, openBrackets = 0, inString = false, escape = false;
+          let lastValidPos = -1;
+          let lastCloseBracePos = -1;
+          let result = '';
+          
           for (let i = 0; i < repaired.length; i++) {
             let c = repaired[i];
-            if (escape) { escape = false; continue; }
-            if (c === '\\') { escape = true; continue; }
-            if (c === '"') { inString = !inString; continue; }
+            
+            if (escape) {
+              if (c === 'u') {
+                const hexChars = repaired.substring(i + 1, i + 5);
+                if (/^[0-9a-fA-F]{4}/.test(hexChars)) {
+                  result += c;
+                  escape = false;
+                } else {
+                  result += 'u';
+                  escape = false;
+                }
+              } else {
+                result += c;
+                escape = false;
+              }
+              continue;
+            }
+            
+            if (c === '\\') {
+              result += c;
+              escape = true;
+              continue;
+            }
+            
+            if (c === '"') {
+              inString = !inString;
+              result += c;
+              continue;
+            }
+            
             if (!inString) {
-              if (c === '{') openBraces++;
-              if (c === '}') openBraces--;
+              if (c === '{') {
+                openBraces++;
+                lastCloseBracePos = -1;
+              }
+              if (c === '}') {
+                openBraces--;
+                lastCloseBracePos = i;
+                if (openBraces === 0) lastValidPos = i;
+              }
               if (c === '[') openBrackets++;
               if (c === ']') openBrackets--;
             }
+            
+            result += c;
           }
-          if (inString) repaired += '"';
-          while (openBrackets > 0) { repaired += ']'; openBrackets--; }
-          while (openBraces > 0) { repaired += '}'; openBraces--; }
+          
+          if (lastValidPos !== -1) {
+            repaired = result.substring(0, lastValidPos + 1);
+          } else if (lastCloseBracePos !== -1) {
+            repaired = result.substring(0, lastCloseBracePos + 1);
+          } else {
+            if (inString) repaired = result + '"';
+            else repaired = result;
+            while (openBrackets > 0) { repaired += ']'; openBrackets--; }
+            while (openBraces > 0) { repaired += '}'; openBraces--; }
+          }
+          
           parsedJson = JSON.parse(repaired);
         } catch (e3) {
           console.error('Failed to repair JSON. Truncation too severe or format invalid.');
-          throw err; // Throw the original parse error
+          console.error('Error details:', e3.message);
+          throw err;
         }
       }
     }
@@ -1352,9 +1210,46 @@ exports.analyzeChat = async (req, res) => {
 
   } catch (error) {
     console.error('AI Analysis Error:', error);
+    
+    const fallbackResponse = {
+      qaScore: 0,
+      status: 'Failed',
+      misleadingPercentage: 0,
+      petitionId: null,
+      agentName: null,
+      customerName: null,
+      customerIssue: 'Unable to analyze',
+      issueCategory: 'Other',
+      errorType: 'System Error',
+      overallRecommendation: 'Analysis failed due to response parsing error',
+      qaFinding: 'Analysis Error',
+      applicableSop: 'N/A',
+      failureCondition: 'JSON parsing failed',
+      rootCause: error.message,
+      criticalChatLogs: [],
+      findings: [],
+      expectedAgentAction: [],
+      agentAction: 'N/A',
+      missingExpectedAction: 'N/A',
+      ahtAnalysis: {
+        result: 'Unable to analyze',
+        timeline: [],
+        observation: 'Analysis failed'
+      },
+      reason: `Analysis failed: ${error.message}`,
+      qaConclusion: {
+        status: 'QA Failed',
+        misleading: 'Unknown',
+        severity: 'Critical',
+        observations: ['JSON parsing error during analysis'],
+        decision: 'Unable to complete QA analysis due to system error.'
+      }
+    };
+    
     return res.status(500).json({ 
       error: 'Failed to analyze conversation', 
-      details: error.message 
+      details: error.message,
+      fallback: fallbackResponse
     });
   }
 };
