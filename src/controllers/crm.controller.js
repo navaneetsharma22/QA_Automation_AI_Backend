@@ -135,8 +135,8 @@ exports.getChats = async (req, res) => {
       });
     }
     
-    // Extract real total from CRM API if available, else fallback to array length
-    const realTotal = response.data?.data?.counts?.resolved || chatsArray.length || 0;
+    // After local filtering, total is always the filtered array length
+    const realTotal = chatsArray.length;
     
     const results = {
       total: realTotal,

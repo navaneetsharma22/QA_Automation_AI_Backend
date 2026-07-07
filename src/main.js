@@ -47,7 +47,7 @@ app.use((req, res, next) => {
     res.setHeader('Access-Control-Allow-Origin', origin || '*');
   }
   res.setHeader('Access-Control-Allow-Methods', 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-use-personal-keys,x-groq-key,x-openai-key,x-anthropic-key,x-gemini-key,x-deepseek-key,x-openrouter-key,x-huggingface-key,x-cerebras-key,x-cohere-key,x-github-key');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type,Authorization,x-qc-token,x-crm-token,x-use-personal-keys,x-groq-key,x-openai-key,x-anthropic-key,x-gemini-key,x-deepseek-key,x-openrouter-key,x-huggingface-key,x-cerebras-key,x-cohere-key,x-github-key');
   res.setHeader('Access-Control-Allow-Credentials', 'true');
 
   // Immediately respond to preflight
