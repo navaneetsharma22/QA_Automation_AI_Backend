@@ -46,14 +46,14 @@ const AI_PROVIDERS = {
   },
   OPENROUTER: {
     name: 'OpenRouter',
-    models: ['meta-llama/llama-3.1-8b-instruct'],
+    models: ['meta-llama/llama-3.1-8b-instruct', 'deepseek/deepseek-r1'],
     defaultModel: 'meta-llama/llama-3.1-8b-instruct',
     baseUrl: 'https://openrouter.ai/api/v1',
     speedRank: 'Unified Access to Multi-Models',
   },
   HUGGINGFACE: {
     name: 'Hugging Face',
-    models: ['meta-llama/Llama-3.3-70B-Instruct', 'Qwen/Qwen2.5-72B-Instruct', 'HuggingFaceH4/zephyr-7b-beta'],
+    models: ['meta-llama/Llama-3.3-70B-Instruct', 'Qwen/Qwen2.5-72B-Instruct', 'deepseek-ai/DeepSeek-R1'],
     defaultModel: 'meta-llama/Llama-3.3-70B-Instruct',
     baseUrl: 'https://router.huggingface.co/v1',
     speedRank: 'Open Source Community Models',

@@ -776,13 +776,18 @@ exports.analyzeChat = async (req, res) => {
     const isGitHub = providerName.includes('GITHUB');
     const isGroq = providerName.includes('GROQ');
     const isCerebras = providerName.includes('CEREBRAS');
-    const restrictionLevel = isR1 ? 2 : ((isMini || isGitHub || isGroq || isCerebras) ? 1 : 0);
-    
+    const isDeepSeek = providerName.includes('DEEPSEEK');
+    const isGitHubR1 = isGitHub && isR1;
+    const isOpenRouterR1 = providerName.includes('OPENROUTER') && isR1;
+    const isHuggingFaceR1 = providerName.includes('HUGGING') && isR1;
+    const isAnyR1 = isR1 || isGitHubR1 || isOpenRouterR1 || isHuggingFaceR1;
+    const restrictionLevel = isAnyR1 ? 2 : ((isMini || isGitHub || isGroq || isCerebras || isDeepSeek) ? 1 : 0);
+
     let MAX_CONV_CHARS = 45000;
-    if (restrictionLevel === 2) MAX_CONV_CHARS = 3500;
-    else if (isMini) MAX_CONV_CHARS = 3000;
-    else if (isCerebras) MAX_CONV_CHARS = 2500;
-    else if (restrictionLevel === 1) MAX_CONV_CHARS = 4000;
+    if (isAnyR1) MAX_CONV_CHARS = 3500;
+    else if (isMini || isGitHub) MAX_CONV_CHARS = 3000;
+    else if (isCerebras || isDeepSeek) MAX_CONV_CHARS = 4000;
+    else if (isGroq) MAX_CONV_CHARS = 6000;
     
     if (safeConversationText.length > MAX_CONV_CHARS) {
       console.log(`Truncating conversation from ${safeConversationText.length} to ${MAX_CONV_CHARS} characters to respect token limits.`);
@@ -794,24 +799,12 @@ exports.analyzeChat = async (req, res) => {
     const detectedCategory = detectChatCategory(safeConversationText);
     console.log(`Detected Category: ${detectedCategory}`);
     
-    // Use compressed prompts for token-limited models, full prompt for everything else
-    const activeSystemPrompt = isR1
-      ? buildCompressedSystemPromptForR1(projectCards, detectedCategory)
-      : (isMini
-        ? buildCompressedSystemPromptForMini(projectCards, detectedCategory)
-      : buildSystemPrompt(projectCards, detectedCategory, restrictionLevel));
+    const activeSystemPrompt = buildCompressedSystemPromptForR1(projectCards, detectedCategory, restrictionLevel);
 
-    // Build the analysis user message — compressed version for token-limited models to save tokens
-    const analysisUserMessage = (isR1 || isMini)
-      ? `Analyze this chat as a Senior QA Analyst. Return ONLY valid JSON matching the schema. No markdown, no reasoning text.\n\n${safeConversationText}`
-      : `Analyze this conversation as a Senior Quality Assurance Analyst with 10+ years of experience:\n\n${safeConversationText}\n\n**CRITICAL INSTRUCTION**: Perform a thorough step-by-step policy-based QA analysis of the conversation above. Strictly adhere to all rules in the JSON knowledge base. You must evaluate every applicable rule and provide detailed explanations. Check for: missing mandatory information gathering, repeated questions, AHT delays, misleading guidance, and unverified claims.\n\n**EXPERT QA STANDARDS**: Every finding must be conversation-specific and policy-justified. Never generate generic observations. Compare the agent's actions against the expected SOP before producing any conclusion. Explain WHY the action violates or complies with the policy. Reference the exact customer and agent messages that support the finding. If no policy violation exists, explicitly state that the agent followed the required SOP.\n\n**REASON FIELD REQUIREMENT**: The reason field must contain ONLY agent mistakes and policy violations with specific SOP references. Include exact chat evidence. Do NOT praise the agent or mention correct actions. If all findings are Pass, use: "No policy violations, misleading guidance, or critical errors were detected."\n\n**CRITICAL LIMIT**: You MUST extract a maximum of 4 pairs (up to 8 messages total) for your criticalChatLogs array, focusing ONLY on the exact moment the sensitive error occurred. Output your final response ONLY as a valid JSON object matching the requested schema exactly.`;
+    const analysisUserMessage = `Analyze this chat as a Senior QA Analyst. Evaluate ALL 20 rules. Return ONLY valid JSON matching the schema. No markdown, no extra text.\n\n${safeConversationText}`;
 
-    // Debug: Log estimated token usage for R1
-    if (isR1 || isMini) {
-      const totalChars = activeSystemPrompt.length + analysisUserMessage.length;
-      const estimatedTokens = Math.ceil(totalChars / 4);
-      console.log(`[${isR1 ? 'DeepSeek R1' : 'gpt-4o-mini'}] System prompt: ${activeSystemPrompt.length} chars, User message: ${analysisUserMessage.length} chars, Total: ${totalChars} chars (~${estimatedTokens} tokens)`);
-    }
+    const totalChars = activeSystemPrompt.length + analysisUserMessage.length;
+    console.log(`[${providerName}/${aiModel}] Prompt: ${activeSystemPrompt.length} chars, Msg: ${analysisUserMessage.length} chars, Total: ~${Math.ceil(totalChars / 4)} tokens`);
     console.log(`Analyzing chat using ${providerName} (${aiModel})...`);
 
     const usePersonalKeys = req.headers['x-use-personal-keys'] === 'true';
@@ -1061,19 +1054,39 @@ exports.analyzeChat = async (req, res) => {
         baseURL: 'https://models.inference.ai.azure.com'
       });
       const requestedGithubModel = (aiModel || 'gpt-4o-mini');
-      const normalizedGithubModel = requestedGithubModel.toLowerCase().includes('405b')
-        ? 'gpt-4o-mini'
-        : requestedGithubModel;
-      const completion = await github.chat.completions.create({
-        messages: [
-          { role: 'system', content: activeSystemPrompt },
-          { role: 'user', content: analysisUserMessage }
-        ],
-        model: normalizedGithubModel,
-        temperature: 0,
-        max_tokens: 2000,
-        response_format: { type: 'json_object' }
-      });
+      let normalizedGithubModel = requestedGithubModel.toLowerCase().includes('405b') ? 'gpt-4o-mini' : requestedGithubModel;
+      let retries = 0;
+      let completion;
+      while (retries < 2) {
+        try {
+          const isR1Model = normalizedGithubModel.toLowerCase().includes('r1') || normalizedGithubModel.toLowerCase().includes('deepseek');
+          completion = await github.chat.completions.create({
+            messages: [
+              { role: 'system', content: activeSystemPrompt },
+              { role: 'user', content: analysisUserMessage }
+            ],
+            model: normalizedGithubModel,
+            temperature: 0,
+            max_tokens: 2000,
+            ...(isR1Model ? {} : { response_format: { type: 'json_object' } })
+          });
+          break;
+        } catch (err) {
+          if (err.status === 400 && err.code === 'unknown_model') {
+            console.warn(`GitHub Models: "${normalizedGithubModel}" not found. Falling back to gpt-4o-mini.`);
+            normalizedGithubModel = 'gpt-4o-mini';
+            retries++;
+            continue;
+          }
+          if (err.status === 413) {
+            throw new Error(`GitHub Models token limit exceeded for "${normalizedGithubModel}". Try gpt-4o-mini or reduce conversation length.`);
+          }
+          retries++;
+          if (retries >= 2) throw err;
+          console.log(`GitHub Models retry ${retries}...`);
+          await new Promise(r => setTimeout(r, 2000));
+        }
+      }
       rawResponse = completion.choices[0].message.content;
     }
     else {
@@ -1092,8 +1105,9 @@ exports.analyzeChat = async (req, res) => {
     }
     let cleanedResponse = rawResponse.trim();
     
-    // Remove DeepSeek-R1 reasoning tags (even if truncated)
-    cleanedResponse = cleanedResponse.replace(/<think>[\s\S]*?(<\/think>|$)/gi, '').trim();
+    // Remove DeepSeek-R1 reasoning tags — two-pass: complete blocks first, then orphaned opening tags
+    cleanedResponse = cleanedResponse.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    cleanedResponse = cleanedResponse.replace(/<think>[\s\S]*/gi, '').trim();
 
     // Remove markdown code blocks
     if (cleanedResponse.startsWith('```json')) {
@@ -1102,11 +1116,30 @@ exports.analyzeChat = async (req, res) => {
       cleanedResponse = cleanedResponse.replace(/^```[a-z]*\n?/, '').replace(/\n?```$/, '');
     }
     
-    // Sanitize bad Unicode escapes (Gemini-style fix)
+    // Sanitize bad Unicode escapes
     cleanedResponse = cleanedResponse.replace(/\\u(?![0-9a-fA-F]{4})/g, 'u');
     
-    // Remove trailing commas (common JSON error)
+    // Remove trailing commas
     cleanedResponse = cleanedResponse.replace(/,\s*([}\]])/g, '$1');
+
+    // Extract only the first complete JSON object (handles models that output multiple JSON blocks)
+    {
+      const start = cleanedResponse.indexOf('{');
+      if (start !== -1) {
+        let depth = 0, inStr = false, esc = false, end = -1;
+        for (let i = start; i < cleanedResponse.length; i++) {
+          const ch = cleanedResponse[i];
+          if (esc) { esc = false; continue; }
+          if (ch === '\\' && inStr) { esc = true; continue; }
+          if (ch === '"') { inStr = !inStr; continue; }
+          if (!inStr) {
+            if (ch === '{') depth++;
+            else if (ch === '}') { depth--; if (depth === 0) { end = i; break; } }
+          }
+        }
+        if (end !== -1) cleanedResponse = cleanedResponse.substring(start, end + 1);
+      }
+    }
     
     let parsedJson;
     try {
