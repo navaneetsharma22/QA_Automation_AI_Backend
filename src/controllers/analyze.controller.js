@@ -174,7 +174,7 @@ ${promptContext.globalInstructions || 'No custom global instructions provided.'}
       }
     : null;
 
-  const defaultOutputSchema = `{"qaScore":0-100,"status":"Passed|Warning|Failed","misleadingPercentage":0-100,"petitionId":"PET ID or null","agentName":"name or null","customerName":"name or null","customerIssue":"issue","issueCategory":"category","errorType":"type","overallRecommendation":"summary","qaFinding":"finding","applicableSop":"SOP","failureCondition":"condition or None","rootCause":"cause or None","criticalChatLogs":[{"speaker":"REAL NAME (Role)","message":"text"}],"findings":[{"ruleName":"rule","status":"Pass|Fail|Not Applicable","description":"desc","explanation":"why","evidence":["quote"]}],"expectedAgentAction":["action"],"agentAction":"what agent did","missingExpectedAction":"missing or None","ahtAnalysis":{"result":"result","timeline":["HH:MM"],"observation":"obs"},"reason":"50-90 words","qaConclusion":{"status":"QA Passed|QA Failed","misleading":"Yes|No","severity":"None|Low|Moderate|High|Critical","observations":["obs"],"decision":"verdict"}}`;
+  const defaultOutputSchema = `{"qaScore":0-100,"status":"Passed|Warning|Failed","misleadingPercentage":0-100,"petitionId":"PET ID or null","agentName":"name or null","customerName":"name or null","customerIssue":"issue","issueCategory":"category","errorType":"type","overallRecommendation":"summary","qaFinding":"finding","applicableSop":"SOP","failureCondition":"condition or None","rootCause":"cause or None","criticalChatLogs":[{"speaker":"REAL NAME (Role)","message":"text"}],"findings":[{"ruleName":"rule","status":"Pass|Fail|Not Applicable","description":"desc","explanation":"why","evidence":["quote"]}],"expectedAgentAction":["action"],"agentAction":"what agent did","missingExpectedAction":"missing or None","ahtAnalysis":{"result":"result","timeline":["HH:MM"],"observation":"obs"},"reason":"50-90 words","qaConclusion":{"status":"QA Passed|QA Failed","misleading":"Yes|No","severity":"None|Low|Moderate|High|Critical","observations":["ONLY violations in plain language. NEVER use rule names, rule numbers, or SOPs (e.g. NEVER write 'Uncertain Customer Response Rule')."],"decision":"verdict"}}`;
 
   const dynamicOutputSchema = `
 You MUST return your response as a valid JSON object with EXACTLY this structure:
@@ -255,6 +255,7 @@ The following 20 rules are MANDATORY. You MUST evaluate ALL of them for EVERY co
 **EVALUATION INSTRUCTION:** For each of the 20 rules above, generate a finding entry.
 **OUTPUT SIZE RULE — CRITICAL FOR PERFORMANCE:**
 - For rules with status **Pass** or **Not Applicable**: output ONLY {"ruleName":"<name>","status":"Pass"} or {"ruleName":"<name>","status":"Not Applicable"} — NO description, NO explanation, NO evidence. This is mandatory to reduce output size.
+- **ALIAS RULE (Rule 3) WHEN PASS:** Output ONLY {"ruleName":"Agent Identity (Alias) Verification","status":"Pass"} — absolutely NO description, NO observation, NO mention of which alias was used. Treat it as invisible when compliant.
 - For rules with status **Fail**: output the FULL 8-point structure with description, explanation, and evidence array.
 - Use "Not Applicable" ONLY when the rule genuinely cannot apply. Use "Pass" when compliant. Use "Fail" only with DIRECT, UNAMBIGUOUS chat evidence.
 
@@ -331,6 +332,7 @@ Every report MUST include ALL of the following fields in the JSON output:
 - misleadingPercentage: Misleading percentage
 - qaConclusion.severity: Severity level (Critical | High | Moderate | Low | None)
 - qaConclusion.status: QA Passed | QA Failed
+- qaConclusion.observations: Array of specific observation strings — include ONLY actual violations (findings with status FAIL). Do NOT add observations for rules that passed or were not applicable. Each observation MUST include concrete details — never generic. For alias violations: add observation ONLY if the agent FAILED the alias check — include the real name detected AND the expected alias (e.g. "Agent introduced as 'Arun Jadaun' instead of assigned alias 'ARNO'"). If the agent used their correct alias (PASS), do NOT add any alias observation. For other violations: include the specific action detail or evidence quote. PROHIBITED: NEVER use rule numbers, SOP names, or policy titles (e.g., 'Uncertain Customer Response Rule') in observations. Just describe the mistake in plain language.
 - reason: QA Reason (following the strict reason generation rules above)
 
 ---
@@ -429,28 +431,32 @@ Generate a concise, evidence-based "reason" field that explains ONLY the agent's
 - If NO issues were found (all findings are Pass), the reason field MUST be exactly: "No policy violations, misleading guidance, or critical errors were detected."
 
 **REASON FIELD — REQUIRED CONTENT (only when issues exist):**
-- State the specific policy violation or error directly.
-- Reference the exact SOP or rule that was violated (e.g., "Per Cancellation SOP §2.1...").
+- State the specific policy violation or error directly in plain language.
 - Include the direct chat evidence (exact quote of the agent's message).
 - Explain the customer impact of the violation.
-- Explain WHY this violates the policy (not just WHAT was violated).
+- Explain WHY this is wrong (not just WHAT was violated).
 - End with a concise QA conclusion.
 
 **PROHIBITED in reason field:**
 - Any mention of what the agent did correctly.
 - Phrases like "the agent correctly...", "the agent successfully...", "the agent did well..."
 - Positive summaries of any kind.
-- Generic statements such as "The agent failed to provide helpful assistance" without citing the specific rule and evidence.
-- Vague references to policy — always cite the specific SOP section or rule ID.
+- Generic statements such as "The agent failed to provide helpful assistance" without citing specific evidence.
+- **Rule numbers, step numbers, or internal policy names** — NEVER write "Rule 3", "Step 2", "UNCERTAIN CUSTOMER RESPONSE RULE", "Per Cancellation SOP §2.1", "Mandatory Rule 21", or any internal reference. Instead, describe the actual mistake in plain human language.
+- References to the QA system, prompt, or analysis engine (e.g. "DeepSeek's focus on...", "per the mandatory rules...").
+- The reason must read like a real human QA reviewer wrote it — not like a system output.
 
 Also, when generating Expected Agent Actions in the JSON, generate issue-specific Expected Agent Actions instead of reusable templates.
 
 ### 5. Chat Log Selection — Evidence-Based
-Generate only the minimum evidence required. Include only messages proving the finding (Customer intent, Agent response, Customer objection, Final response proving the issue).
+**CRITICAL — ALWAYS INCLUDE BOTH SIDES:** Every chat log entry MUST be a PAIRED exchange showing the Customer message FOLLOWED BY the Agent response. Never include only agent messages or only customer messages. The pair shows WHAT the customer asked/said and HOW the agent responded.
+Generate only the minimum evidence required. Include only message pairs proving the finding.
 Do NOT include Greetings, Waiting messages, Thank you messages, Duplicate information, or Irrelevant conversation.
-Preferred size: 2-5 customer/agent exchanges. Every included message must directly support the finding.
-**CRITICAL:** Every chat log must answer: "Does this message directly prove the QA finding?" If NO, exclude it.
-**EXPERT PRINCIPLE:** Select the exact moment the agent made the mistake or violated the policy. Do not include context that doesn't directly support the violation.
+Preferred size: 2-4 paired exchanges (each pair = 1 customer message + 1 agent message). Every pair must directly support the finding.
+**FORMAT:** Each entry in criticalChatLogs must alternate: Customer message first, then Agent response. Example:
+  {"speaker": "Joe Smith (Customer)", "message": "Can I cancel my booking?"}
+  {"speaker": "ARNO (Agent)", "message": "Yes, I can help you with that."}
+**EXPERT PRINCIPLE:** Select the exact moment the agent made the mistake — but always include the customer message that triggered it to show full context.
 
 ### 6. EXPERT DECISION FLOW (8-Point Finding Structure)
 For every QA finding, include these 8 elements:
@@ -530,33 +536,43 @@ OFFICIAL ALIAS MAP (Alias → Real Name):
 |-------|-----------|
 ${ALIAS_MAP_TABLE}
 
+**HIGHEST PRIORITY — FALSE-POSITIVE PREVENTION:**
+The chat transcript may contain the agent's REAL NAME in system-generated metadata, headers, labels, escalation notes, or CRM entries (e.g., "[Arun Jadaun]", "Arun Jadaun has accepted this query", "Transfer from Arun Jadaun"). These are NOT agent self-introductions. IGNORE all real names appearing in system metadata.
+ONLY check what name the agent used IN THEIR OWN CHAT MESSAGES when they introduced/welcomed/greeted the customer or signed off.
+If the agent said "I am ARNO" or "My name is ARNO" or "ARNO here" in their actual message → that is their self-introduction → check ARNO against the Alias column → ARNO is in the Alias column → **PASS**.
+
 EVALUATION STEPS — run on every conversation:
-STEP 1 — Scan the ENTIRE conversation for any name the agent used in introduction, sign-off, or any self-reference.
-STEP 2 — Check whether that name matches ANY part of a Real Name in the alias map above — including first name only, last name only, or full name.
+STEP 1 — Scan ONLY the agent's own chat messages (not system labels, not headers, not metadata) for any name used in introduction, greeting, sign-off, or self-reference.
+STEP 2 — Check whether that name is in the **Alias column** (PASS) or the **Real Name column** (FAIL).
 STEP 3 — Apply result logic below.
 
 RESULT LOGIC:
-- Agent used only a name from the Alias column → PASS.
-- Agent used any part of a Real Name from the map (first name, last name, or full name) in self-introduction, sign-off, or self-reference → FAIL.
+- Agent used a name from the Alias column (e.g., ALEX, ANDRE, LARS, KRIS, ARNO) in their own message → **PASS**. Generate ONLY {"ruleName":"Agent Identity (Alias) Verification","status":"Pass"} with NO description. Do NOT add ANY alias-related text to qaConclusion.observations. The alias check must be COMPLETELY INVISIBLE in the report when passed.
+- Agent used any part of a Real Name from the map (e.g., Samarth, Anuj, Harshit, Arun) **in their own chat message** as self-introduction → FAIL.
   - Classification: Alias Name Violation | Severity: Major
   - Report MUST include: alias used (if any), original name detected, expected alias, exact chat quote, reason, severity.
   - Reason: "The agent introduced themselves using their original name '[Real Name detected]' instead of the approved support alias '[ALIAS]'. According to Corendon policy, agents must use only their assigned alias while assisting customers."
-- Both the alias AND the mapped real name appear in the same conversation → FAIL.
+  - ADD to qaConclusion.observations: "Agent introduced as '[Real Name detected]' instead of assigned alias '[ALIAS]'"
+- Both the alias AND the mapped real name appear in the agent's own messages → FAIL.
   - Classification: Critical Alias Policy Violation | Severity: Critical
-- Agent name not detectable in the conversation → Not Applicable.
+  - ADD to qaConclusion.observations: "Agent used both real name '[Real Name]' and alias '[ALIAS]' in the same conversation — Critical Alias Policy Violation"
+- Agent name not detectable in the conversation → Not Applicable. Do NOT add any alias observation.
+
+**qaConclusion.observations RULE:** Only include observations for rules that FAILED. Never add observations for rules that passed or were not applicable. NEVER mention alias compliance, alias name used, or any alias-related text when the alias check is Pass or Not Applicable.
 
 PARTIAL NAME MATCHING — CRITICAL:
 The real names in the map are full names (e.g. "Om Kumar", "Nitesh Yadav", "Ruby Poddar"). An agent violates the policy if they use:
 - The full real name (e.g. "Om Kumar") → FAIL
-- Only the first name of the real name (e.g. "Om", "Nitesh", "Ruby", "Vipul", "Aditya") → FAIL if used as a self-identifier
-- Only the last name of the real name (e.g. "Kumar", "Yadav", "Poddar") → FAIL if used as a self-identifier
-Any fragment of a mapped real name used by the agent to identify themselves is a violation.
+- Only the first name of the real name (e.g. "Om", "Nitesh", "Ruby", "Vipul", "Aditya") → FAIL if used as a self-identifier in their own message
+- Only the last name of the real name (e.g. "Kumar", "Yadav", "Poddar") → FAIL if used as a self-identifier in their own message
+Any fragment of a mapped real name used by the agent IN THEIR OWN MESSAGE to identify themselves is a violation.
 
 DO NOT FAIL for:
 - Customer names, third-party names, or any name not present in the Real Name column of the alias map.
-- Names that appear only in system-generated labels the agent did not write.
+- Names that appear only in system-generated labels, brackets, parentheses, headers, escalation notes, or transfer logs (e.g. [Arun Jadaun], (Agent Name), <Arun>, "Transfer from Arun Jadaun", "Arun Jadaun has accepted this query") — these are automated tracking labels the agent did not write.
 - Common words that happen to match a name fragment but are clearly not self-identification (e.g. the word "kumar" appearing in a customer's name or a booking reference).
 - When the agent is quoting or referring to someone else — only self-identification counts.
+- When the agent's speaker label shows a real name but the agent introduced themselves with the correct alias in their actual message — the speaker label is system-generated and NOT a violation.
 
 ---
 ## Compact Policy Reference
@@ -586,13 +602,14 @@ DO NOT FAIL for:
 Return ONLY JSON matching schema. No Markdown outside JSON.
 
 ## Critical Chat Logs (MAX 4 PAIRS / 8 MESSAGES)
-1. LIMIT: 4 exchanges maximum
-2. Hunt for sensitive error moment only
-3. No full chat dumps
-4. Exclude noise: greetings, closings, holding messages
-5. Evidence only: customer intent, agent response, customer reaction
-6. USE REAL NAMES: "Dennis (Agent)" or "Makayla Mendoza (Customer)" — NOT "Agent"/"Customer"
-7. Every log must answer: "Does this prove the finding?" If NO, exclude it
+1. LIMIT: 4 paired exchanges maximum (each pair = 1 customer message + 1 agent response)
+2. **MANDATORY: Every entry MUST include BOTH the customer message AND the agent response as a pair.** Never output only agent messages.
+3. Hunt for the sensitive error moment — but always show what the customer said/asked that triggered the agent's response
+4. No full chat dumps
+5. Exclude noise: greetings, closings, holding messages
+6. Correct order: Customer message FIRST, then Agent response
+7. USE REAL NAMES: "Dennis (Agent)" or "Makayla Mendoza (Customer)" — NOT "Agent"/"Customer"
+8. Every pair must answer: "Does this exchange prove the finding?" If NO, exclude it
 
 ## AI Prompt Studio (Dynamic Context)
 The following are critical instructions and examples provided by the admin. These instructions take precedence over general analysis rules.
@@ -718,7 +735,7 @@ const buildCompressedSystemPromptForR1 = (projectCards, detectedCategory) => {
 
   const outputSchema = dynamicFindingSchema
     ? `{"qaScore":0-100,"status":"Passed|Warning|Failed","misleadingPercentage":0-100,"petitionId":"PET ID or null","agentName":"name or null","errorType":"type","overallRecommendation":"summary","findings":[${JSON.stringify(dynamicFindingSchema)}]}`
-    : `{"qaScore":0-100,"status":"Passed|Warning|Failed","misleadingPercentage":0-100,"petitionId":"PET ID or null","agentName":"name or null","customerName":"customer full name or null","customerIssue":"primary issue","issueCategory":"category","errorType":"error category","overallRecommendation":"summary","qaFinding":"No QA Error Found or main finding","applicableSop":"primary SOP rule","failureCondition":"specific failure or None","rootCause":"root cause or None","criticalChatLogs":[{"speaker":"REAL NAME (Role)","message":"exact text"}],"findings":[{"ruleName":"rule","description":"what agent did","status":"Pass|Fail|Not Applicable","explanation":"why","evidence":["quote"]}],"expectedAgentAction":["action"],"agentAction":"what agent did","missingExpectedAction":"what was missing or None" ,"ahtAnalysis":{"result":"result","timeline":["HH:MM→HH:MM"],"observation":"obs"},"reason":"80-140 words, one natural paragraph, professional human QA language, focused on the specific violations, policy reference, evidence, and customer impact; do not sound robotic","qaConclusion":{"status":"QA Passed|QA Failed","misleading":"Yes|No","severity":"None|Low|Moderate|High|Critical","observations":["obs"],"decision":"verdict"}}`;
+    : `{"qaScore":0-100,"status":"Passed|Warning|Failed","misleadingPercentage":0-100,"petitionId":"PET ID or null","agentName":"name or null","customerName":"customer full name or null","customerIssue":"primary issue","issueCategory":"category","errorType":"error category","overallRecommendation":"summary","qaFinding":"No QA Error Found or main finding","applicableSop":"primary SOP rule","failureCondition":"specific failure or None","rootCause":"root cause or None","criticalChatLogs":[{"speaker":"REAL NAME (Role)","message":"exact text"}],"findings":[{"ruleName":"rule","description":"what agent did","status":"Pass|Fail|Not Applicable","explanation":"why","evidence":["quote"]}],"expectedAgentAction":["action"],"agentAction":"what agent did","missingExpectedAction":"what was missing or None" ,"ahtAnalysis":{"result":"result","timeline":["HH:MM→HH:MM"],"observation":"obs"},"reason":"80-140 words, one natural paragraph, professional human QA language, focused on the specific violations, policy reference, evidence, and customer impact; do not sound robotic","qaConclusion":{"status":"QA Passed|QA Failed","misleading":"Yes|No","severity":"None|Low|Moderate|High|Critical","observations":["ONLY violations in plain language. NEVER use rule names, rule numbers, or SOPs."],"decision":"verdict"}}`;
 
   const bookingSourceNote = ['Booking', 'Cancellation', 'Reschedule', 'Refund'].includes(detectedCategory)
     ? `\nBOOKING SOURCE: For ${detectedCategory} queries, PASS if the agent asked the customer where they booked — asking is a valid verification attempt even if the customer's answer was vague or uncertain. Only FAIL if the agent never asked at all AND proceeded with booking-specific guidance.`
@@ -738,11 +755,16 @@ Never fail the agent for asking the verification question.`;
   const aliasRule = `
 ALIAS VERIFICATION RULE (mandatory, every conversation):
 Official alias map (ALIAS=RealName, pipe-separated): ${ALIAS_MAP_STRING}
-STEP 1 - Find the name the agent used in introduction, sign-off, or self-reference.
-STEP 2 - Check if that name matches any RealName in the map above - full name OR any individual part (first name alone, last name alone, or any combination).
-EXAMPLES OF VIOLATIONS: "I am Om Kumar" = FAIL (real name of THIJS). "My name is Om" = FAIL (first name of THIJS). "This is Nitesh" = FAIL (first name of DENNIS). "I am Vipul" = FAIL (first name of VINCENT). "Hi I'm Rohit" = FAIL (first name of ROBERT). Any real/Indian name from the map used in self-reference = FAIL regardless of full or partial.
-RESULT: Agent used alias only = PASS. Agent used RealName or any part of RealName instead of alias = FAIL | Classification: Alias Name Violation | Severity: Major | Report must include: alias used (if any), original name detected, expected alias, exact chat quote, reason. Reason template: "The agent introduced themselves using their original name '[Real Name]' instead of the approved support alias '[ALIAS]'. According to Corendon policy, agents must use only their assigned alias while assisting customers." Both alias AND real name in same conversation = FAIL | Classification: Critical Alias Policy Violation | Severity: Critical. Name not detectable = Not Applicable.
-DO NOT FAIL for customer names, third-party names, or names not in the RealName column.`;
+
+CRITICAL FALSE-POSITIVE PREVENTION: The chat transcript often contains the agent's REAL NAME in system-generated metadata, headers, speaker labels, escalation notes, or CRM entries (e.g., "[Arun Jadaun]", "Arun Jadaun has accepted this query", "Transfer from Nitesh Yadav"). These are NOT agent self-introductions. IGNORE all real names in system metadata. ONLY check what name the agent used IN THEIR OWN CHAT MESSAGE when greeting/introducing themselves.
+
+STEP 1 - Find the name the agent used IN THEIR OWN CHAT MESSAGE in introduction, greeting, sign-off, or self-reference. Ignore system labels and headers.
+STEP 2 - Check if that name is in the ALIAS column (PASS) or matches any RealName (FAIL).
+EXAMPLES OF PASS: Agent message says "I am KRIS" or "My name is ARNO" or "ALEX here" = PASS (these are aliases). Even if system label shows "[Krishnakant Tyagi]" or "Arun Jadaun (Agent)" — the agent's OWN message used the alias = PASS.
+EXAMPLES OF VIOLATIONS: Agent message says "I am Om Kumar" = FAIL (real name of THIJS). "My name is Om" = FAIL (first name of THIJS). "This is Nitesh" = FAIL (first name of DENNIS). "I am Vipul" = FAIL (first name of VINCENT). "Hi I'm Rohit" = FAIL (first name of ROBERT). Any Real name from the map used in the agent's OWN message as self-reference = FAIL.
+RESULT: Agent used an ALIAS from the map in their own message = PASS (do NOT add any alias observation to qaConclusion.observations — alias check must be COMPLETELY INVISIBLE in report when passed). Agent used their RealName in their own message = FAIL | Classification: Alias Name Violation | Severity: Major | Add to qaConclusion.observations: "Agent introduced as '[Real Name]' instead of assigned alias '[ALIAS]'" | Reason template: "The agent introduced themselves using their original name '[Real Name]' instead of the approved support alias '[ALIAS]'. According to Corendon policy, agents must use only their assigned alias while assisting customers." Both alias AND real name in agent's own messages = FAIL | Severity: Critical. Name not detectable = Not Applicable.
+DO NOT FAIL for customer names, third-party names, names not in the RealName column, names in system labels/brackets/parentheses/headers/escalation notes (e.g. [Arun Jadaun], "Transfer from Arun Jadaun"), or speaker labels showing real names.
+qaConclusion.observations MUST only contain observations for rules that FAILED. Never mention alias when PASS or Not Applicable.`;
 
   return `# DeepSeek-R1 QA Prompt
 Role: senior QA analyst. Stay evidence-based, conversation-specific, and JSON-only.
@@ -753,15 +775,16 @@ DeepSeek focus: false commitments, misleading assistance, incorrect escalation, 
 
 Cancellation contradiction: if the agent says refund or rebooking is automatic and later says the customer must use the cancellation email to choose between refund or rebooking, treat that as a failure unless the agent explicitly corrects the earlier statement in the same exchange.
 
-Conversation limits: use max 4 chat pairs, avoid noise, and cite only the exact messages proving the finding.
+Conversation limits: use max 4 paired exchanges in criticalChatLogs. Each pair MUST include both the customer message AND the agent response — never output only agent messages. Avoid noise, cite only the exact exchanges proving the finding.
 
-Reason style: write the reason like a real senior auditor would. Use a natural, fluent paragraph, not shorthand. Explain the violation, the exact policy issue, the concrete evidence, and the customer impact. If there are multiple violations, connect them cleanly in one paragraph.
+Reason style: write the reason like a real senior auditor would. Use a natural, fluent paragraph, not shorthand. Explain the violation, the concrete evidence, and the customer impact. If there are multiple violations, connect them cleanly in one paragraph. NEVER use rule numbers (e.g. "Rule 3", "Step 2"), internal policy names (e.g. "UNCERTAIN CUSTOMER RESPONSE RULE"), SOP section references, or system references (e.g. "DeepSeek's focus on..."). Just describe what went wrong in plain human language.
 
 Global rules: ${rulesString}
 
 ${categoryContextString ? `Category context: ${categoryContextString}
 ` : ''}Error types: ${errorTypesString}
 ${uncertaintyRule}
+${aliasRule}
 ${bookingSourceNote}
 
 Output schema: ${outputSchema}`;
@@ -860,7 +883,8 @@ const cleanChatTranscript = (rawText) => {
   cleaned = cleaned.replace(/is there anything else.*?(\.|\!|\?)\s?/gi, '');
   cleaned = cleaned.replace(/have a great (day|evening|night|weekend).*?(\.|\!|\?)\s?/gi, '');
   cleaned = cleaned.replace(/(please wait|please hold|allow me|give me).*?(\.|\!|\?)\s?/gi, '');
-  cleaned = cleaned.replace(/i (am|will be|have been).*?(\.|\!|\?)\s?/gi, '');
+  // NOTE: Removed "i am/will be/have been" stripping — it was deleting the agent's alias
+  // introduction (e.g. "I am KRIS") which the AI needs for alias verification (Rule 3).
   cleaned = cleaned.replace(/looking forward to.*?(\.|\!|\?)\s?/gi, '');
   cleaned = cleaned.replace(/appreciate your.*?(\.|\!|\?)\s?/gi, '');
   cleaned = cleaned.replace(/best regards.*?(\.|\!|\?)\s?/gi, '');
