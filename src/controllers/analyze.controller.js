@@ -14,6 +14,39 @@ const getOpenAiClient = (customKey) => new OpenAI({ apiKey: customKey || process
 const getAnthropicClient = (customKey) => new Anthropic({ apiKey: customKey || process.env.ANTHROPIC_API_KEY });
 const getCohereClient = (customKey) => new CohereClient({ token: customKey || process.env.COHERE_API_KEY || 'no-key' });
 
+// Official Corendon alias map — single source of truth used by both prompts
+const ALIAS_MAP = {
+  ALEX: 'Samarth Samrat',
+  ANDRE: 'Anuj Sharma',
+  ARJEN: 'Harshit Kumar',
+  STEVE: 'Simranjeet Singh',
+  NICK: 'Nikhil Rawat',
+  DENNIS: 'Nitesh Yadav',
+  THIJS: 'Om Kumar',
+  PIETER: 'Devendra Pratap Singh',
+  BAS: 'Raman Samant',
+  ELSA: 'Ruby Poddar',
+  LARS: 'Sunil Singh',
+  MILAN: 'Vansh Kumar',
+  WILLEM: 'Vishal Chauhan',
+  VERA: 'Vanshika Porwal',
+  KRIS: 'Krishnakant Tyagi',
+  KOEN: 'K. Suman Prusty',
+  ARNO: 'Arun Jadaun',
+  ADAM: 'Aditya Kumar',
+  THOMAS: 'Tushar Kumar',
+  VINCENT: 'Vipul Raj Verma',
+  JELLE: 'Yash Prajapati',
+  SIMON: 'Sahil Das',
+  JASPER: 'Yash Tyagi',
+  TIJS: 'Tejaswi Mishra',
+  ROBERT: 'Rohit Kumar',
+  KEVIN: 'Kevin Gillbert',
+  KAREL: 'Karan Kumar'
+};
+const ALIAS_MAP_STRING = Object.entries(ALIAS_MAP).map(([a, r]) => `${a}=${r}`).join('|');
+const ALIAS_MAP_TABLE = Object.entries(ALIAS_MAP).map(([a, r]) => `| ${a} | ${r} |`).join('\n');
+
 // Build the base system prompt dynamically based on the Corendon Airlines instructions
 // UPGRADED: Expert Policy-Based QA Analysis Engine
 const buildSystemPrompt = (projectCards, detectedCategory = null, restrictionLevel = 0) => {
@@ -217,6 +250,7 @@ The following 20 rules are MANDATORY. You MUST evaluate ALL of them for EVERY co
 | 18 | No Booking Assumption | Did the agent avoid guessing or assuming any booking information? |
 | 19 | No Policy Contradiction | Did the agent avoid contradicting Corendon Airlines company policy at any point? |
 | 20 | No Hallucinated Information | Did the agent avoid providing hallucinated, invented, or fabricated information? |
+| 21 | Customer Uncertainty Verification | Did the agent treat uncertain customer responses as UNVERIFIED and avoid providing booking-specific guidance based on unconfirmed mandatory information? |
 
 **EVALUATION INSTRUCTION:** For each of the 20 rules above, generate a finding entry.
 **OUTPUT SIZE RULE — CRITICAL FOR PERFORMANCE:**
@@ -454,9 +488,80 @@ Use conservative conclusions when evidence is ambiguous. If you are not sure, pr
 ### 16. Final Goal — Expert Policy-Based QA Analysis
 Think like a **Senior QA Auditor with 10+ years of experience**. Your analysis must stay conversation-specific, policy-justified, evidence-based, and aligned to the JSON schema.
 
+## MANDATORY RULE 21 — CUSTOMER UNCERTAINTY VERIFICATION (GLOBAL — ALL WORKFLOWS)
+
+Uncertain phrases (not exhaustive): "I think", "I'm not sure", "maybe", "probably", "I guess", "I believe", "I don't remember", "as far as I know", "it should be", or any similar hedging language.
+
+Mandatory fields requiring confirmed answers: booking source, fare type, PNR, booking reference, flight number, travel date/time, payment method, transaction ID, passenger details, operating airline, same/different PNR, or any other SOP-required information.
+
+An uncertain answer = NOT VERIFIED. Apply this 3-step evaluation:
+
+STEP 1 — Agent never asked AND proceeded with booking-specific guidance → FAIL.
+- Finding: Failed to Gather Mandatory Information Before Providing Resolution
+- Severity: Moderate
+- Root Cause: Agent proceeded with booking-specific guidance without collecting mandatory verification information.
+- Reason: The customer provided mandatory booking information using uncertain language. Instead of requesting verification or advising the customer to confirm the details from the booking confirmation or e-ticket, the agent assumed the information was correct and continued with booking-specific guidance. Mandatory verification was not completed before providing the response.
+
+STEP 2 — Agent asked but never explained WHY the information was mandatory → FAIL.
+- Finding: Failed to Explain the Importance of Mandatory Verification
+- Severity: Low
+- Root Cause: The agent requested mandatory information but failed to explain its importance for booking verification and continued the process without obtaining confirmed details.
+- Reason: The customer continued providing uncertain information such as "I think" or "I'm not sure." Although the agent requested the required booking details, they did not explain why the information was mandatory for booking verification. The agent should have informed the customer that the booking source, fare type, or other required details were essential to verify the booking, determine the correct airline policy, and proceed with the request. The customer should also have been advised to provide confirmed information from the booking confirmation or e-ticket rather than uncertain responses before further assistance or escalation could be provided.
+- What counts as explaining WHY (any equivalent phrasing passes): "I cannot verify your booking without these details", "The booking source and fare type are required before I can check the applicable policy", "Without confirmed information I cannot verify your eligibility", "These details are mandatory before I can continue", "Please provide confirmed details instead of 'I think' or 'I'm not sure' so I can verify your booking correctly", or any statement that conveys the information is required for verification/policy determination.
+- Do NOT fail Step 2 if the agent gave any explanation of why the information was needed, even if phrased differently from the examples above.
+
+STEP 3 — Agent asked and explained, but then proceeded with booking-specific guidance or escalated before receiving confirmed details → FAIL.
+- Finding: Failed to Gather Mandatory Information Before Providing Resolution
+- Severity: Moderate
+- Root Cause: Agent requested information and explained its importance but did not wait for confirmed details before proceeding or escalating.
+- Reason: The customer provided uncertain responses to mandatory verification questions. Although the agent requested the required information and explained why it was needed, they proceeded with booking-specific guidance or escalated the case before the customer confirmed the details. Mandatory verification must be completed with confirmed information before any booking-specific guidance or escalation is provided.
+
+PASS only if: agent asked, explained why the information was mandatory, AND waited for confirmed details before proceeding — OR gave only general policy without booking-specific guidance.
+
+Never fail the agent for asking the verification question — asking is always correct behavior regardless of the customer's answer.
+
+This rule applies to ALL workflows: Booking, Refund, Cancellation, Reschedule, Payment, Baggage, Check-in, Flight Disruption, Connecting Flights, Seat, Meal, Promo Code, Compensation, Special Assistance, and any workflow requiring mandatory customer verification.
+
+---
+## MANDATORY RULE 3 — AGENT ALIAS VERIFICATION (GLOBAL — EVERY CONVERSATION)
+
+OFFICIAL ALIAS MAP (Alias → Real Name):
+| Alias | Real Name |
+|-------|-----------|
+${ALIAS_MAP_TABLE}
+
+EVALUATION STEPS — run on every conversation:
+STEP 1 — Scan the ENTIRE conversation for any name the agent used in introduction, sign-off, or any self-reference.
+STEP 2 — Check whether that name matches ANY part of a Real Name in the alias map above — including first name only, last name only, or full name.
+STEP 3 — Apply result logic below.
+
+RESULT LOGIC:
+- Agent used only a name from the Alias column → PASS.
+- Agent used any part of a Real Name from the map (first name, last name, or full name) in self-introduction, sign-off, or self-reference → FAIL.
+  - Classification: Alias Name Violation | Severity: Major
+  - Report MUST include: alias used (if any), original name detected, expected alias, exact chat quote, reason, severity.
+  - Reason: "The agent introduced themselves using their original name '[Real Name detected]' instead of the approved support alias '[ALIAS]'. According to Corendon policy, agents must use only their assigned alias while assisting customers."
+- Both the alias AND the mapped real name appear in the same conversation → FAIL.
+  - Classification: Critical Alias Policy Violation | Severity: Critical
+- Agent name not detectable in the conversation → Not Applicable.
+
+PARTIAL NAME MATCHING — CRITICAL:
+The real names in the map are full names (e.g. "Om Kumar", "Nitesh Yadav", "Ruby Poddar"). An agent violates the policy if they use:
+- The full real name (e.g. "Om Kumar") → FAIL
+- Only the first name of the real name (e.g. "Om", "Nitesh", "Ruby", "Vipul", "Aditya") → FAIL if used as a self-identifier
+- Only the last name of the real name (e.g. "Kumar", "Yadav", "Poddar") → FAIL if used as a self-identifier
+Any fragment of a mapped real name used by the agent to identify themselves is a violation.
+
+DO NOT FAIL for:
+- Customer names, third-party names, or any name not present in the Real Name column of the alias map.
+- Names that appear only in system-generated labels the agent did not write.
+- Common words that happen to match a name fragment but are clearly not self-identification (e.g. the word "kumar" appearing in a customer's name or a booking reference).
+- When the agent is quoting or referring to someone else — only self-identification counts.
+
+---
 ## Compact Policy Reference
 - Rule 13 escalation: never tell the flyer to call external support; use internal escalation only unless the issue is third-party booking guidance.
-- Rule 3 alias: fail only if the system shows the agent's own real name and the chat uses that same name in self-introduction, sign-off, or direct self-reference. Mentions of other names, nationalities, regions, or customer names are not alias violations.
+- Rule 3 alias: use the official alias map above. FAIL when any part of a mapped Real Name (first name, last name, or full name) is used by the agent as a self-identifier. Customer names and unrelated names are never alias violations.
 - Rule 2 flyer name: fail only when the agent uses a clearly different customer name.
 - Rules 1 and 15: identify the primary issue before giving guidance; clarifying questions are allowed.
 - Promo code handling: if a promo code is mentioned, verify source before guidance; Corendon-issued promo codes require Tier 3 escalation, third-party codes go back to the issuer.
@@ -616,8 +721,28 @@ const buildCompressedSystemPromptForR1 = (projectCards, detectedCategory) => {
     : `{"qaScore":0-100,"status":"Passed|Warning|Failed","misleadingPercentage":0-100,"petitionId":"PET ID or null","agentName":"name or null","customerName":"customer full name or null","customerIssue":"primary issue","issueCategory":"category","errorType":"error category","overallRecommendation":"summary","qaFinding":"No QA Error Found or main finding","applicableSop":"primary SOP rule","failureCondition":"specific failure or None","rootCause":"root cause or None","criticalChatLogs":[{"speaker":"REAL NAME (Role)","message":"exact text"}],"findings":[{"ruleName":"rule","description":"what agent did","status":"Pass|Fail|Not Applicable","explanation":"why","evidence":["quote"]}],"expectedAgentAction":["action"],"agentAction":"what agent did","missingExpectedAction":"what was missing or None" ,"ahtAnalysis":{"result":"result","timeline":["HH:MM→HH:MM"],"observation":"obs"},"reason":"80-140 words, one natural paragraph, professional human QA language, focused on the specific violations, policy reference, evidence, and customer impact; do not sound robotic","qaConclusion":{"status":"QA Passed|QA Failed","misleading":"Yes|No","severity":"None|Low|Moderate|High|Critical","observations":["obs"],"decision":"verdict"}}`;
 
   const bookingSourceNote = ['Booking', 'Cancellation', 'Reschedule', 'Refund'].includes(detectedCategory)
-    ? `\nBOOKING SOURCE: For ${detectedCategory} queries, check if agent verified booking source (direct vs third-party) per SOP. Only fail if SOP requires it AND agent skipped it AND it led to incorrect guidance.`
+    ? `\nBOOKING SOURCE: For ${detectedCategory} queries, PASS if the agent asked the customer where they booked — asking is a valid verification attempt even if the customer's answer was vague or uncertain. Only FAIL if the agent never asked at all AND proceeded with booking-specific guidance.`
     : '';
+
+  const uncertaintyRule = `
+UNCERTAIN CUSTOMER RESPONSE RULE (global, all workflows):
+Uncertain phrases: I think, not sure, maybe, probably, I guess, I believe, I do not remember, as far as I know, it should be, or similar hedging.
+Mandatory fields: booking source, fare type, PNR, booking reference, flight number, travel date, payment method, transaction ID, passenger details, operating airline, or any SOP-required field.
+Uncertain answer = NOT VERIFIED. Apply 3-step flow:
+STEP 1 - Agent never asked AND proceeded with booking-specific guidance: FAIL. Finding: Failed to Gather Mandatory Information Before Providing Resolution | Severity: Moderate | Root Cause: Agent proceeded without collecting mandatory verification information. | Reason: The customer provided mandatory booking information using uncertain language. Instead of requesting verification or advising the customer to confirm the details from the booking confirmation or e-ticket, the agent assumed the information was correct and continued with booking-specific guidance.
+STEP 2 - Agent asked but never explained WHY the info was mandatory: FAIL. Finding: Failed to Explain the Importance of Mandatory Verification | Severity: Low | Root Cause: The agent requested mandatory information but failed to explain its importance for booking verification and continued the process without obtaining confirmed details. | Reason: The customer continued providing uncertain information such as "I think" or "I'm not sure." Although the agent requested the required booking details, they did not explain why the information was mandatory for booking verification. The agent should have informed the customer that the booking source, fare type, or other required details were essential to verify the booking, determine the correct airline policy, and proceed with the request. The customer should also have been advised to provide confirmed information from the booking confirmation or e-ticket rather than uncertain responses before further assistance or escalation could be provided. | What counts as explaining WHY (any equivalent phrasing passes): "I cannot verify your booking without these details", "These details are required before I can check the applicable policy", "Without confirmed information I cannot verify your eligibility", "These details are mandatory before I can continue", or any statement conveying the information is required for verification.
+STEP 3 - Agent asked and explained, but proceeded or escalated before receiving confirmed details: FAIL. Finding: Failed to Gather Mandatory Information Before Providing Resolution | Severity: Moderate | Root Cause: Agent requested information and explained its importance but did not wait for confirmed details before proceeding or escalating.
+PASS only if agent asked, explained why, and waited for confirmed details before proceeding, or gave only general policy.
+Never fail the agent for asking the verification question.`;
+
+  const aliasRule = `
+ALIAS VERIFICATION RULE (mandatory, every conversation):
+Official alias map (ALIAS=RealName, pipe-separated): ${ALIAS_MAP_STRING}
+STEP 1 - Find the name the agent used in introduction, sign-off, or self-reference.
+STEP 2 - Check if that name matches any RealName in the map above - full name OR any individual part (first name alone, last name alone, or any combination).
+EXAMPLES OF VIOLATIONS: "I am Om Kumar" = FAIL (real name of THIJS). "My name is Om" = FAIL (first name of THIJS). "This is Nitesh" = FAIL (first name of DENNIS). "I am Vipul" = FAIL (first name of VINCENT). "Hi I'm Rohit" = FAIL (first name of ROBERT). Any real/Indian name from the map used in self-reference = FAIL regardless of full or partial.
+RESULT: Agent used alias only = PASS. Agent used RealName or any part of RealName instead of alias = FAIL | Classification: Alias Name Violation | Severity: Major | Report must include: alias used (if any), original name detected, expected alias, exact chat quote, reason. Reason template: "The agent introduced themselves using their original name '[Real Name]' instead of the approved support alias '[ALIAS]'. According to Corendon policy, agents must use only their assigned alias while assisting customers." Both alias AND real name in same conversation = FAIL | Classification: Critical Alias Policy Violation | Severity: Critical. Name not detectable = Not Applicable.
+DO NOT FAIL for customer names, third-party names, or names not in the RealName column.`;
 
   return `# DeepSeek-R1 QA Prompt
 Role: senior QA analyst. Stay evidence-based, conversation-specific, and JSON-only.
@@ -636,7 +761,7 @@ Global rules: ${rulesString}
 
 ${categoryContextString ? `Category context: ${categoryContextString}
 ` : ''}Error types: ${errorTypesString}
-
+${uncertaintyRule}
 ${bookingSourceNote}
 
 Output schema: ${outputSchema}`;
